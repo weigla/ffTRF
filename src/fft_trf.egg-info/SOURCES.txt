@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/fft_trf/__init__.py
+src/fft_trf/model.py
+src/fft_trf/preprocessing.py
+src/fft_trf.egg-info/PKG-INFO
+src/fft_trf.egg-info/SOURCES.txt
+src/fft_trf.egg-info/dependency_links.txt
+src/fft_trf.egg-info/requires.txt
+src/fft_trf.egg-info/top_level.txt
+tests/test_model.py

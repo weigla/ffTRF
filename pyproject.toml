@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fft-trf"
+version = "0.1.0"
+description = "Frequency-domain TRF and deconvolution tools for high-rate neural data."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.12",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+
+[tool.pixi.dependencies]
+python = ">=3.10,<3.14"
+numpy = ">=1.26"
+scipy = ">=1.12"
+
+[tool.pixi.pypi-dependencies]
+fft_trf = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { features = [], solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }
+
+[tool.pixi.tasks]
+test = "python -m pytest -q"
+import-check = "python -c \"import fft_trf; print(fft_trf.FrequencyTRF.__name__)\""
