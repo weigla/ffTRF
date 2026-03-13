@@ -1097,7 +1097,7 @@ packages:
 - pypi: .
   name: fft-trf
   version: 0.1.0
-  sha256: 6354f7c605290657e3642a050fbade92f1f7a6a47d7202442419cfbc24b19ba3
+  sha256: 6edf4bd2ab71364cafe692730e2259400f3d38d27ff6a793726376323848d1e5
   requires_dist:
   - numpy>=1.26
   - scipy>=1.12

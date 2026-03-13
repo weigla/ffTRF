@@ -86,6 +86,28 @@ print("cross-validation scores:", cv_scores)
 print("prediction score:", score)
 ```
 
+## Runnable Examples
+
+The repository also includes simulated end-to-end examples under
+`examples/`. They cover the main `FrequencyTRF` usage patterns:
+
+- single trial, single feature, single output
+- multiple trials with cross-validated regularization
+- multiple stimulus features and multiple response channels
+- backward decoding from multichannel responses to one stimulus
+
+Run all of them with:
+
+```bash
+pixi run -e compare examples-demo
+```
+
+or:
+
+```bash
+python examples/run_all_examples.py --output-dir artifacts/examples --no-show
+```
+
 ## What A Frequency-Domain TRF Solves
 
 In a standard linear TRF model, the target signal is approximated as a lagged
