@@ -39,6 +39,12 @@ closely than the classic lag-matrix formulation.
 pip install -e .
 ```
 
+For the optional examples/plotting demo:
+
+```bash
+pip install -e ".[compare]" mtrf
+```
+
 ### Pixi
 
 Pixi can use this `pyproject.toml` directly as its manifest:
@@ -47,6 +53,7 @@ Pixi can use this `pyproject.toml` directly as its manifest:
 pixi install
 pixi run import-check
 pixi run -e test test
+pixi run -e compare compare-demo
 ```
 
 That gives you:
@@ -54,6 +61,7 @@ That gives you:
 - a default Pixi environment with Python, NumPy, SciPy, and this package as an
   editable local dependency
 - a `test` environment that also includes `pytest`
+- a `compare` environment with `matplotlib` and `mTRFpy` for side-by-side kernel plots
 
 ## Quick example
 
@@ -85,6 +93,7 @@ metric = model.train(
     regularization=np.logspace(-6, 1, 8),
     segment_length=4096,
     overlap=0.5,
+    window="hann",
     k=-1,
     trial_weights=inverse_variance_weights(response),
 )
@@ -134,9 +143,39 @@ Important methods:
 - For ABR-like kernels, use a short output window such as `tmin=-0.005`,
   `tmax=0.030`.
 - If you have many long trials, use `segment_length` around 2048 to 8192 samples
-  and `overlap=0.5` to stabilize the cross-spectral estimates.
+  and `overlap=0.5` to stabilize the cross-spectral estimates; in that case
+  `window="hann"` is usually a good default.
 - If trial noise differs strongly, pass `trial_weights="inverse_variance"` or
   an explicit weight vector.
+- If you want the closest comparison to a standard time-domain mTRF simulation,
+  start with `segment_length=None` and `window=None`.
+
+## Optional Comparison Example
+
+The core installable toolbox lives under `src/fft_trf/`. Optional validation
+and comparison code lives under `examples/` so it stays separate from the public
+library API.
+
+You can generate a side-by-side figure comparing the true kernel, `fft_trf`, a
+direct time-domain lagged ridge solution, and `mTRFpy` with:
+
+```bash
+python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show
+```
+
+For a comparison that is as close as possible to a standard mTRF simulation,
+start with:
+
+```bash
+python examples/compare_with_mtrf.py --segment-length none --window none --no-show
+```
+
+If you instead want a more ABR-like spectral-estimation setup, use overlapping
+segments and a Hann window:
+
+```bash
+python examples/compare_with_mtrf.py --segment-length 512 --overlap 0.5 --window hann --no-show
+```
 
 ## Packaging notes
 

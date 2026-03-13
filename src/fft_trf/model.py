@@ -323,7 +323,7 @@ class FrequencyTRF:
         segment_length: int | None = None,
         overlap: float = 0.0,
         n_fft: int | None = None,
-        window: None | str | tuple[str, float] | np.ndarray = "hann",
+        window: None | str | tuple[str, float] | np.ndarray = None,
         detrend: None | str = "constant",
         k: int = -1,
         average: bool | Sequence[int] = True,
@@ -350,9 +350,11 @@ class FrequencyTRF:
             transfer function as a time-domain kernel. For ABR-style work this
             is often something like ``tmin=-0.005`` and ``tmax=0.030``.
         regularization:
-            Either a single ridge value or a sequence of candidate values. When
-            a sequence is provided, cross-validation is used to select the best
-            value before fitting the final model on all training trials.
+            Either a single ridge value or a sequence of candidate values. The
+            value is applied directly as ``lambda * I`` in the spectral linear
+            system. When a sequence is provided, cross-validation is used to
+            select the best value before fitting the final model on all training
+            trials.
         segment_length:
             Segment size used to estimate cross-spectra. If ``None``, each trial
             is treated as a single segment.
@@ -363,8 +365,10 @@ class FrequencyTRF:
             FFT size used for spectral estimation. If omitted, a fast FFT length
             is chosen automatically from ``segment_length``.
         window:
-            Window applied to each segment before FFT. By default a Hann window
-            is used.
+            Window applied to each segment before FFT. By default no window is
+            applied, which keeps the behavior closer to a standard lagged ridge
+            fit. When using short overlapping segments, ``window="hann"`` is
+            often a good choice.
         detrend:
             Optional detrending passed to :func:`scipy.signal.detrend`.
         k:
@@ -538,9 +542,7 @@ class FrequencyTRF:
         eye = np.eye(n_inputs, dtype=np.complex128)
         transfer_function = np.zeros_like(cxy)
         for frequency_index in range(n_frequencies):
-            trace_scale = np.trace(cxx[frequency_index]).real / max(n_inputs, 1)
-            ridge = regularization * max(trace_scale, np.finfo(float).eps)
-            system = cxx[frequency_index] + ridge * eye
+            system = cxx[frequency_index] + regularization * eye
             transfer_function[frequency_index] = np.linalg.solve(
                 system,
                 cxy[frequency_index],
