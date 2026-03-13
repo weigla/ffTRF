@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fft-trf"
 version = "0.1.0"
-description = "Frequency-domain TRF and deconvolution tools for high-rate neural data."
+description = "Frequency-domain temporal response function and deconvolution tools."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -54,3 +54,4 @@ compare = { features = ["compare"], solve-group = "default" }
 test = "python -m pytest -q"
 import-check = "python -c \"import fft_trf; print(fft_trf.FrequencyTRF.__name__)\""
 compare-demo = "python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show"
+benchmark-demo = "python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md"

@@ -39,7 +39,7 @@ def default_kernel(
     tmin: float,
     tmax: float,
 ) -> np.ndarray:
-    """Create a simple ABR-like simulation kernel."""
+    """Create a simple sparse simulation kernel."""
 
     lag_start = int(round(tmin * fs))
     lag_stop = int(round(tmax * fs))

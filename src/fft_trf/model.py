@@ -4,13 +4,13 @@ The central object exported by this module is :class:`FrequencyTRF`. It mirrors
 the basic workflow of mTRF-style toolboxes while estimating the mapping in the
 frequency domain:
 
-1. compute cross-spectra between stimulus and response
+1. compute cross-spectra between predictor and target signals
 2. solve a ridge-regularized linear system at each frequency bin
 3. convert the learned transfer function back into a time-domain kernel for
    interpretation and prediction
 
-This makes the implementation convenient for high-sample-rate analyses such as
-auditory brainstem response (ABR) work on EEG or MEG recordings.
+This is often attractive when continuous signals are long, sampled at high
+rates, or represented by many lagged samples.
 """
 
 from __future__ import annotations
@@ -348,8 +348,7 @@ class FrequencyTRF:
             Sampling rate in Hz shared by stimulus and response.
         tmin, tmax:
             Time window, in seconds, that should be extracted from the learned
-            transfer function as a time-domain kernel. For ABR-style work this
-            is often something like ``tmin=-0.005`` and ``tmax=0.030``.
+            transfer function as a time-domain kernel.
         regularization:
             Either a single ridge value or a sequence of candidate values. The
             value is applied directly as ``lambda * I`` in the spectral linear
@@ -383,9 +382,9 @@ class FrequencyTRF:
         seed:
             Optional random seed for shuffling trial order before creating folds.
         trial_weights:
-            Optional trial weights. Use ``"inverse_variance"`` for ABR-style
-            inverse-variance weighting or pass an explicit vector with one weight
-            per training trial.
+            Optional trial weights. Use ``"inverse_variance"`` for
+            inverse-variance weighting or pass an explicit vector with one
+            weight per training trial.
 
         Returns
         -------

@@ -1,10 +1,11 @@
 """Small preprocessing helpers commonly needed before fitting frequency TRFs.
 
 The functions in this module are intentionally minimal and dependency-light.
-They cover a few operations that come up frequently in ABR-style pipelines:
+They cover a few operations that are broadly useful when preparing continuous
+predictor and response signals for TRF analysis:
 
-- create positive/negative half-wave regressors from an audio waveform
-- resample stimulus-derived regressors to the neural recording rate
+- create positive/negative half-wave regressors from a waveform
+- resample derived regressors to a target sampling rate
 - compute inverse-variance trial weights for noisy recordings
 """
 
@@ -34,8 +35,8 @@ def half_wave_rectify(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     Notes
     -----
-    This mirrors a common ABR regressor construction strategy where positive and
-    negative polarities are modeled separately and later averaged.
+    Modeling positive and negative polarities separately can be useful when the
+    sign of a waveform carries different predictive structure.
     """
 
     signal = np.asarray(signal, dtype=float)
@@ -71,8 +72,8 @@ def resample_signal(
 
     Notes
     -----
-    This is a practical helper for bringing audio-derived regressors to the same
-    sampling rate as EEG/MEG data before fitting a model.
+    This is a practical helper for bringing derived regressors to the same
+    sampling rate as the target signal before fitting a model.
     """
 
     ratio = Fraction(float(target_fs) / float(orig_fs)).limit_denominator(
@@ -102,8 +103,8 @@ def inverse_variance_weights(trials: Sequence[np.ndarray]) -> np.ndarray:
     numpy.ndarray
         One normalized weight per trial. The weights sum to 1.
 
-    Variance is averaged across channels/features, which is usually appropriate
-    for ABR-like recordings where noisier trials should contribute less.
+    Variance is averaged across channels/features so noisier trials contribute
+    less to the final fit.
     """
 
     if len(trials) == 0:
