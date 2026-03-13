@@ -177,6 +177,40 @@ segments and a Hann window:
 python examples/compare_with_mtrf.py --segment-length 512 --overlap 0.5 --window hann --no-show
 ```
 
+## Experimental Bayesian Solver
+
+There is also a separate experimental Bayesian estimator under
+`fft_trf.experimental` with a `FrequencyTRF`-like API:
+
+```python
+from fft_trf.experimental import BayesianFrequencyTRF
+
+model = BayesianFrequencyTRF(direction=1)
+model.train(
+    stimulus,
+    response,
+    fs=1_000,
+    tmin=0.0,
+    tmax=0.04,
+    regularization=1e-3,
+    prior="ridge",
+)
+prediction, score = model.predict(stimulus=stimulus, response=response)
+```
+
+It is intentionally not part of the root package API because it is more of a
+research tool than a stable core interface, but it now mirrors the main
+estimator's training API much more closely:
+
+- pass a scalar `regularization` for `FrequencyTRF`/mTRF-like ridge behavior
+- pass a sequence of `regularization` values for cross-validated model
+  selection
+- pass `regularization=None` to switch into empirical-Bayes mode
+
+On top of the usual `weights`, `times`, `predict`, and `score`, it also exposes
+posterior covariance, credible intervals, and the learned `alpha`, `beta`, and
+effective `regularization` values.
+
 ## Packaging notes
 
 - `pip install -e .` works through the standard Python packaging metadata.
