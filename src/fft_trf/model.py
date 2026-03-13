@@ -1,3 +1,18 @@
+"""Main frequency-domain TRF estimator and core scoring utilities.
+
+The central object exported by this module is :class:`FrequencyTRF`. It mirrors
+the basic workflow of mTRF-style toolboxes while estimating the mapping in the
+frequency domain:
+
+1. compute cross-spectra between stimulus and response
+2. solve a ridge-regularized linear system at each frequency bin
+3. convert the learned transfer function back into a time-domain kernel for
+   interpretation and prediction
+
+This makes the implementation convenient for high-sample-rate analyses such as
+auditory brainstem response (ABR) work on EEG or MEG recordings.
+"""
+
 from __future__ import annotations
 
 import pickle
@@ -11,7 +26,25 @@ from scipy.signal import fftconvolve, get_window
 
 
 def pearsonr(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-    """Column-wise Pearson correlation."""
+    """Compute column-wise Pearson correlation.
+
+    Parameters
+    ----------
+    y_true:
+        Observed samples arranged as ``(n_samples, n_outputs)``.
+    y_pred:
+        Predicted samples with the same shape as ``y_true``.
+
+    Returns
+    -------
+    numpy.ndarray
+        One correlation coefficient per output channel / feature.
+
+    Notes
+    -----
+    This is the default scoring metric used by :class:`FrequencyTRF`. It is
+    intentionally lightweight and does not return p-values.
+    """
 
     y_true = _ensure_2d(y_true, "y_true")
     y_pred = _ensure_2d(y_pred, "y_pred")
@@ -195,10 +228,59 @@ def _shifted_convolution(
 
 class FrequencyTRF:
     """
-    Frequency-domain transfer-response estimator.
+    Estimate stimulus-response mappings in the frequency domain.
 
-    The public interface is intentionally close to ``mTRFpy``. The fit itself
-    uses spectral deconvolution rather than a time-lagged design matrix.
+    ``FrequencyTRF`` is the main estimator of this toolbox. Its public API is
+    intentionally close to ``mTRFpy``:
+
+    - call :meth:`train` to fit the model
+    - call :meth:`predict` to generate predicted responses or stimuli
+    - call :meth:`score` to evaluate predictions
+    - inspect :attr:`weights` and :attr:`times` as the time-domain kernel
+
+    Unlike a classic time-domain TRF, the fit is performed through
+    ridge-regularized spectral deconvolution. This is often attractive for
+    high-rate continuous data where explicitly building large lag matrices is
+    cumbersome.
+
+    Parameters
+    ----------
+    direction:
+        Modeling direction. Use ``1`` for a forward model
+        (stimulus -> neural response) and ``-1`` for a backward model
+        (neural response -> stimulus).
+    metric:
+        Callable used to score predictions. It must accept ``(y_true, y_pred)``
+        and return one score per output column. By default a column-wise Pearson
+        correlation is used.
+
+    Attributes
+    ----------
+    transfer_function:
+        Complex-valued frequency-domain mapping with shape
+        ``(n_frequencies, n_inputs, n_outputs)``.
+    frequencies:
+        Frequency vector in Hz corresponding to ``transfer_function``.
+    weights:
+        Time-domain kernel extracted from ``transfer_function`` over the fitted
+        lag window. Shape is ``(n_inputs, n_lags, n_outputs)``.
+    times:
+        Lag values in seconds corresponding to the second axis of
+        :attr:`weights`.
+    regularization:
+        Selected ridge parameter.
+    fs:
+        Sampling rate used during fitting.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from fft_trf import FrequencyTRF
+    >>> x = np.random.randn(2000, 1)
+    >>> y = np.random.randn(2000, 1)
+    >>> model = FrequencyTRF(direction=1)
+    >>> model.train(x, y, fs=1000, tmin=0.0, tmax=0.03, regularization=1e-3)
+    >>> prediction = model.predict(stimulus=x)
     """
 
     def __init__(
@@ -249,10 +331,69 @@ class FrequencyTRF:
         trial_weights: None | str | Sequence[float] = None,
     ) -> np.ndarray | float | None:
         """
-        Fit the model.
+        Fit the frequency-domain TRF.
 
-        If ``regularization`` is a scalar, the model is fitted directly.
-        If it is a sequence, k-fold cross-validation is used to select the best value.
+        Parameters
+        ----------
+        stimulus:
+            One trial as a 1D/2D array or multiple trials as a list of arrays.
+            Each trial must have shape ``(n_samples, n_features)``. A 1D vector
+            is treated as a single-feature input.
+        response:
+            Neural data with one trial as a 1D/2D array or multiple trials as a
+            list of arrays. Each trial must have shape
+            ``(n_samples, n_outputs)``.
+        fs:
+            Sampling rate in Hz shared by stimulus and response.
+        tmin, tmax:
+            Time window, in seconds, that should be extracted from the learned
+            transfer function as a time-domain kernel. For ABR-style work this
+            is often something like ``tmin=-0.005`` and ``tmax=0.030``.
+        regularization:
+            Either a single ridge value or a sequence of candidate values. When
+            a sequence is provided, cross-validation is used to select the best
+            value before fitting the final model on all training trials.
+        segment_length:
+            Segment size used to estimate cross-spectra. If ``None``, each trial
+            is treated as a single segment.
+        overlap:
+            Fractional overlap between neighboring segments. Must lie in
+            ``[0, 1)``.
+        n_fft:
+            FFT size used for spectral estimation. If omitted, a fast FFT length
+            is chosen automatically from ``segment_length``.
+        window:
+            Window applied to each segment before FFT. By default a Hann window
+            is used.
+        detrend:
+            Optional detrending passed to :func:`scipy.signal.detrend`.
+        k:
+            Number of cross-validation folds when multiple regularization values
+            are supplied. ``-1`` means leave-one-out over trials.
+        average:
+            How cross-validation scores should be reduced across output
+            channels/features. ``True`` returns a single score per regularization
+            value, ``False`` returns one score per output, and a sequence of
+            indices averages only over the selected outputs.
+        seed:
+            Optional random seed for shuffling trial order before creating folds.
+        trial_weights:
+            Optional trial weights. Use ``"inverse_variance"`` for ABR-style
+            inverse-variance weighting or pass an explicit vector with one weight
+            per training trial.
+
+        Returns
+        -------
+        None or numpy.ndarray
+            ``None`` when a single regularization value is fitted directly.
+            Otherwise returns cross-validation scores for each candidate
+            regularization value.
+
+        Notes
+        -----
+        The fitted model is always stored on the instance, even when
+        cross-validation is used. In that case the final fit uses the selected
+        regularization value and all provided trials.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -423,7 +564,25 @@ class FrequencyTRF:
         tmin: float | None = None,
         tmax: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Return an mTRF-like impulse response extracted from the spectral model."""
+        """Extract a time-domain kernel from the fitted transfer function.
+
+        Parameters
+        ----------
+        tmin, tmax:
+            Optional lag window in seconds. If omitted, the window used during
+            :meth:`train` is reused.
+
+        Returns
+        -------
+        weights, times:
+            ``weights`` has shape ``(n_inputs, n_lags, n_outputs)`` and ``times``
+            contains the corresponding lag values in seconds.
+
+        Notes
+        -----
+        This method is useful when you want to inspect a different lag window
+        without refitting the spectral model.
+        """
 
         if self.transfer_function is None or self.fs is None or self.n_fft is None:
             raise ValueError("Model must be trained before extracting an impulse response.")
@@ -455,7 +614,36 @@ class FrequencyTRF:
         tmin: float | None = None,
         tmax: float | None = None,
     ) -> list[np.ndarray] | np.ndarray | tuple[list[np.ndarray] | np.ndarray, np.ndarray | float]:
-        """Predict the estimand and optionally score it against observed data."""
+        """Generate predictions from a fitted model.
+
+        Parameters
+        ----------
+        stimulus, response:
+            Inputs follow the same single-trial / multi-trial conventions as
+            :meth:`train`. For forward models, ``stimulus`` is required. For
+            backward models, ``response`` is required. If the corresponding
+            observed target is also provided, the method additionally returns a
+            prediction score.
+        average:
+            Reduction strategy for the returned score. ``True`` averages over
+            outputs, ``False`` returns one score per output, and a sequence of
+            indices averages only over selected outputs.
+        tmin, tmax:
+            Optional lag window used during prediction. If omitted, the fitted
+            lag window is used.
+
+        Returns
+        -------
+        prediction or (prediction, metric):
+            Predicted trials are returned in the same single-trial vs list form
+            as the predictor input. When observed targets are supplied, the
+            method also returns the metric defined on the estimator.
+
+        Notes
+        -----
+        Prediction is performed by convolving the predictor with the extracted
+        time-domain kernel over the requested lag window.
+        """
 
         if self.weights is None or self.fs is None:
             raise ValueError("Model must be trained before prediction.")
@@ -531,7 +719,11 @@ class FrequencyTRF:
         tmin: float | None = None,
         tmax: float | None = None,
     ) -> np.ndarray | float:
-        """Return the prediction metric without returning the prediction itself."""
+        """Score predictions without returning the predicted signals.
+
+        This is a convenience wrapper around :meth:`predict` for workflows where
+        only the metric is needed.
+        """
 
         _, metric = self.predict(
             stimulus=stimulus,
@@ -623,6 +815,7 @@ class FrequencyTRF:
         return fold_mean[:, np.asarray(list(average), dtype=int)].mean(axis=1)
 
     def save(self, path: str | Path) -> None:
+        """Serialize the fitted estimator to disk using :mod:`pickle`."""
         path = Path(path)
         if not path.parent.exists():
             raise FileNotFoundError(f"Directory does not exist: {path.parent}")
@@ -630,6 +823,7 @@ class FrequencyTRF:
             pickle.dump(self, handle, pickle.HIGHEST_PROTOCOL)
 
     def load(self, path: str | Path) -> None:
+        """Load estimator state from a pickle file into this instance."""
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"File does not exist: {path}")
@@ -638,6 +832,8 @@ class FrequencyTRF:
         self.__dict__ = loaded.__dict__
 
     def copy(self) -> "FrequencyTRF":
+        """Return a copy of the estimator and all learned arrays."""
+
         copied = FrequencyTRF(direction=self.direction, metric=self.metric)
         for key, value in self.__dict__.items():
             setattr(copied, key, _copy_value(value))
