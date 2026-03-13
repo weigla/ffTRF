@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 import numpy as np
+import pytest
 
 from fft_trf import FrequencyTRF, half_wave_rectify, inverse_variance_weights, resample_signal
 
@@ -220,3 +221,36 @@ def test_optional_comparison_helper_runs_without_mtrf_dependency() -> None:
     assert result.mtrf_kernel is None
     assert result.metrics["fft_vs_true"] > 0.95
     assert result.metrics["fft_vs_time"] > 0.95
+
+
+def test_frequency_trf_plot_if_matplotlib_available() -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(19)
+    fs = 1_000
+    kernel = np.zeros(20)
+    kernel[2] = 0.9
+    kernel[5] = -0.25
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=4,
+        n_samples=1_024,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.020,
+        regularization=1e-3,
+    )
+
+    fig, ax = model.plot(label="fft_trf")
+    assert ax.get_xlabel() == "Lag (ms)"
+    assert ax.get_ylabel() == "Weight"
+    plt.close(fig)

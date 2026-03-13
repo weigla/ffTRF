@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from fft_trf.experimental import (
+from fft_trf import (
     BayesianFrequencyTRF,
     fit_bayesian_frequency_trf,
     predict_bayesian_frequency_trf,
@@ -342,3 +342,102 @@ def test_bayesian_frequency_trf_backward_api() -> None:
     )
     assert isinstance(wrapped_prediction, list)
     assert wrapped_score > 0.75
+
+
+def test_bayesian_frequency_trf_plot_methods_if_matplotlib_available() -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(38)
+    fs = 1_000
+    kernel = np.zeros(20)
+    kernel[2] = 0.8
+    kernel[6] = -0.2
+
+    stimulus, response = _simulate(
+        rng=rng,
+        n_trials=4,
+        n_samples=1_024,
+        kernel=kernel,
+        lag_start=0,
+        noise_scale=0.03,
+    )
+
+    model = BayesianFrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.020,
+        prior="smooth",
+    )
+
+    fig_model, ax_model = model.plot(label="posterior")
+    fig_result, ax_result = model.result().plot(label="result")
+
+    assert ax_model.get_xlabel() == "Lag (ms)"
+    assert ax_result.get_ylabel() == "Weight"
+
+    plt.close(fig_model)
+    plt.close(fig_result)
+
+
+def test_bayesian_frequency_trf_supports_custom_credible_levels() -> None:
+    rng = np.random.default_rng(39)
+    fs = 1_000
+    tmin = 0.0
+    tmax = 0.020
+    kernel = np.zeros(int(round((tmax - tmin) * fs)))
+    kernel[2] = 0.8
+    kernel[6] = -0.2
+
+    stimulus, response = _simulate(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        lag_start=0,
+        noise_scale=0.04,
+    )
+
+    model = BayesianFrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        prior="smooth",
+        credible_level=0.8,
+    )
+
+    assert np.isclose(model.credible_level, 0.8)
+    assert np.isclose(model.result().credible_level, 0.8)
+
+    default_width = model.credible_interval[1] - model.credible_interval[0]
+    interval_95, times_95 = model.credible_interval_at(0.95)
+    interval_80_slice, times_80_slice = model.credible_interval_at(0.8, tmin=0.0, tmax=0.010)
+
+    assert np.allclose(model.result().credible_interval, model.credible_interval)
+    assert np.mean(interval_95[1] - interval_95[0]) > np.mean(default_width)
+    assert interval_80_slice.shape[2] == times_80_slice.size
+    assert times_80_slice[0] >= 0.0
+    assert times_80_slice[-1] < 0.010
+
+
+def test_bayesian_frequency_trf_rejects_invalid_credible_levels() -> None:
+    rng = np.random.default_rng(40)
+    stimulus = rng.standard_normal(1_024)
+    response = rng.standard_normal((1_024, 1))
+
+    model = BayesianFrequencyTRF(direction=1)
+    with pytest.raises(ValueError, match="credible_level"):
+        model.train(
+            stimulus=stimulus,
+            response=response,
+            fs=1_000,
+            tmin=0.0,
+            tmax=0.020,
+            prior="ridge",
+            credible_level=1.0,
+        )

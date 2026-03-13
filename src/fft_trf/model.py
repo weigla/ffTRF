@@ -236,6 +236,7 @@ class FrequencyTRF:
     - call :meth:`train` to fit the model
     - call :meth:`predict` to generate predicted responses or stimuli
     - call :meth:`score` to evaluate predictions
+    - call :meth:`plot` to visualize the fitted kernel
     - inspect :attr:`weights` and :attr:`times` as the time-domain kernel
 
     Unlike a classic time-domain TRF, the fit is performed through
@@ -606,6 +607,61 @@ class FrequencyTRF:
         kernel = full_kernel[np.mod(lag_indices, self.n_fft), :, :]
         times = lag_indices / self.fs
         return np.transpose(kernel, (1, 0, 2)), times
+
+    def plot(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        ax=None,
+        time_unit: str = "ms",
+        color: str | None = None,
+        linewidth: float = 2.0,
+        title: str | None = None,
+        label: str | None = None,
+    ):
+        """Plot one fitted time-domain kernel.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select which input/output pair should be plotted.
+        tmin, tmax:
+            Optional lag window to visualize. If omitted, the fitted window is
+            used.
+        ax:
+            Existing matplotlib axes. When omitted, a new figure is created.
+        time_unit:
+            Either ``"ms"`` or ``"s"`` for the x-axis.
+        color, linewidth, title, label:
+            Standard matplotlib styling arguments for the kernel line.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the plot.
+        """
+
+        if self.weights is None or self.times is None:
+            raise ValueError("Model must be trained before plotting.")
+
+        from .plotting import plot_kernel
+
+        weights, times = self.to_impulse_response(tmin=tmin, tmax=tmax)
+        return plot_kernel(
+            weights=weights,
+            times=times,
+            input_index=input_index,
+            output_index=output_index,
+            ax=ax,
+            time_unit=time_unit,
+            color=color,
+            linewidth=linewidth,
+            title=title,
+            label=label,
+        )
 
     def predict(
         self,

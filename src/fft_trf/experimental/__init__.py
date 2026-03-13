@@ -1,6 +1,6 @@
-"""Experimental estimators that are intentionally separate from the core API."""
+"""Compatibility aliases for legacy experimental imports."""
 
-from .bayesian import (
+from ..bayesian import (
     BayesianFrequencyTRF,
     BayesianTRFResult,
     fit_bayesian_frequency_trf,

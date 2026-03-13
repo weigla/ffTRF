@@ -8,6 +8,8 @@ design matrix becomes expensive or awkward, for example ABR-style analyses on
 The package is intentionally close in spirit to `mTRFpy`:
 
 - a `FrequencyTRF` estimator with `train`, `predict`, and `score`
+- a `BayesianFrequencyTRF` estimator with the same basic workflow plus
+  posterior uncertainty
 - multi-trial input using lists of arrays
 - scalar or cross-validated ridge regularization
 - weights exposed as a time-domain impulse response for interpretation
@@ -39,11 +41,13 @@ closely than the classic lag-matrix formulation.
 pip install -e .
 ```
 
-For the optional examples/plotting demo:
+For the optional examples and built-in plotting methods:
 
 ```bash
 pip install -e ".[compare]" mtrf
 ```
+
+The estimator plotting methods use `matplotlib` if it is installed.
 
 ### Pixi
 
@@ -106,6 +110,7 @@ print("held-out correlation:", r)
 # mTRF-like public attributes
 times_ms = model.times * 1e3
 abr_kernel = model.weights[0, :, 0]
+fig, ax = model.plot()
 ```
 
 ## API summary
@@ -126,7 +131,32 @@ Important methods:
 - `train(...)`
 - `predict(...)`
 - `score(...)`
+- `plot(...)`
 - `to_impulse_response(...)`
+- `save(...)` / `load(...)`
+
+### `BayesianFrequencyTRF`
+
+Bayesian estimator with the same basic workflow as `FrequencyTRF`, but with
+posterior uncertainty and evidence-based prior fitting.
+
+Important attributes after fitting:
+
+- `weights`: posterior mean kernel with shape `(n_inputs, n_lags, n_outputs)`
+- `credible_interval`: marginal interval with user-selectable posterior mass and shape
+  `(2, n_inputs, n_lags, n_outputs)`
+- `credible_level`: posterior mass used for the stored interval
+- `alpha`, `beta`: learned evidence hyperparameters
+- `regularization`: effective shrinkage value on the `FrequencyTRF` scale
+
+Important methods:
+
+- `train(...)`
+- `predict(...)`
+- `score(...)`
+- `plot(...)`
+- `credible_interval_at(...)`
+- `result(...)`
 - `save(...)` / `load(...)`
 
 ### Preprocessing helpers
@@ -177,13 +207,12 @@ segments and a Hann window:
 python examples/compare_with_mtrf.py --segment-length 512 --overlap 0.5 --window hann --no-show
 ```
 
-## Experimental Bayesian Solver
+## Bayesian Solver
 
-There is also a separate experimental Bayesian estimator under
-`fft_trf.experimental` with a `FrequencyTRF`-like API:
+`BayesianFrequencyTRF` is now part of the main toolbox API:
 
 ```python
-from fft_trf.experimental import BayesianFrequencyTRF
+from fft_trf import BayesianFrequencyTRF
 
 model = BayesianFrequencyTRF(direction=1)
 model.train(
@@ -193,19 +222,22 @@ model.train(
     tmin=0.0,
     tmax=0.04,
     prior="smooth",
+    credible_level=0.8,
 )
 prediction, score = model.predict(stimulus=stimulus, response=response)
+fig, ax = model.plot(credible_level=0.95)
 ```
 
-It is intentionally not part of the root package API because it is more of a
-research tool than a stable core interface, but it now mirrors the main
-estimator's training API much more closely:
+It mirrors the main estimator's training API closely:
 
 - keep `regularization=None` for the intended evidence-based Bayesian fit
 - pass a scalar `regularization` only when you explicitly want
   `FrequencyTRF`/mTRF-like fixed-lambda behavior
 - pass a sequence of `regularization` values for cross-validated model
   selection
+
+The older import path `fft_trf.experimental` is kept as a compatibility alias,
+but new code should import the Bayesian objects directly from `fft_trf`.
 
 Available priors:
 
@@ -215,6 +247,45 @@ Available priors:
   responses such as ABRs
 - `ard`: automatic relevance determination with one evidence-updated precision
   per input feature, useful when some regressors may be irrelevant
+
+What they do in practice:
+
+- `ridge`: every weight is shrunk toward zero with the same overall strength.
+  This is the closest Bayesian equivalent of classic ridge / mTRF regularization.
+  Extra prior-specific parameters: none.
+- `smooth`: neighboring lags are coupled through a finite-difference precision
+  matrix, so the model prefers kernels that change gradually across time. This
+  is useful when you expect a broad, smooth response rather than isolated sharp
+  peaks. Extra prior-specific parameter: `smoothness_order`.
+- `decay_ridge`: weights are still shrunk toward zero, but later lags are
+  penalized more strongly than earlier ones. In effect, the prior says “the
+  response should probably happen early unless the data strongly support later
+  structure.” Extra prior-specific parameter: `decay_tau`.
+- `ard`: each input feature gets its own evidence-updated shrinkage parameter.
+  Relevant features are allowed to keep substantial weight, while irrelevant
+  features are pushed strongly toward zero as whole kernels. This is especially
+  useful for multi-regressor models. Extra prior-specific parameters: none, but
+  it must be used with `regularization=None`.
+
+What the additional parameters mean:
+
+- `smoothness_order`: only used by `smooth`. `1` gives a weaker smoothness
+  preference, while `2` penalizes curvature more strongly and usually produces
+  smoother kernels.
+- `decay_tau`: only used by `decay_ridge`. It is a time constant in seconds.
+  Smaller values make the prior focus more strongly on early lags; larger
+  values make it behave more like ordinary ridge.
+- `alpha_init` and `beta_init`: starting values for the evidence updates. These
+  are usually left at their defaults, but they can matter more for `ard`
+  because multiple feature-specific shrinkage values are being learned.
+- `credible_level`: sets the posterior mass of the stored marginal credible
+  interval. For example, `0.95` stores a 95% interval, while `0.8` stores a
+  narrower 80% interval. You can also request a different level later with
+  `credible_interval_at(...)` or `plot(credible_level=...)`.
+- `regularization`: not part of the intended Bayesian workflow. Keep it at
+  `None` for evidence-based fitting. Set it only if you explicitly want a fixed
+  or cross-validated compatibility mode for comparison to `FrequencyTRF` or
+  mTRF-style ridge fits.
 
 Examples:
 
@@ -244,7 +315,9 @@ On top of the usual `weights`, `times`, `predict`, and `score`, it also exposes
 posterior covariance, credible intervals, and the learned `alpha`, `beta`, and
 effective `regularization` values. Fixed `regularization` is still available for
 parity checks against non-Bayesian estimators, but it is not the recommended
-default for the Bayesian solver.
+default for the Bayesian solver. Both `FrequencyTRF` and `BayesianFrequencyTRF`
+also provide a built-in `plot()` method for visualizing fitted kernels; the
+Bayesian version additionally shows the credible interval by default.
 
 ## Packaging notes
 
