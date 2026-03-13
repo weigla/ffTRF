@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from fft_trf.experimental import (
     BayesianFrequencyTRF,
@@ -189,6 +190,114 @@ def test_bayesian_frequency_trf_cross_validates_regularization() -> None:
     assert isinstance(model.regularization, float)
     _, held_out_score = model.predict(stimulus=stimulus[8:], response=response[8:])
     assert held_out_score > 0.8
+
+
+def test_bayesian_frequency_trf_decay_ridge_suppresses_late_lags() -> None:
+    rng = np.random.default_rng(35)
+    fs = 1_000
+    tmin = 0.0
+    tmax = 0.080
+    kernel = np.zeros(int(round((tmax - tmin) * fs)))
+    kernel[3] = 1.0
+    kernel[9] = -0.35
+    kernel[16] = 0.12
+
+    stimulus, response = _simulate(
+        rng=rng,
+        n_trials=8,
+        n_samples=4_096,
+        kernel=kernel,
+        lag_start=0,
+        noise_scale=0.08,
+    )
+
+    ridge = BayesianFrequencyTRF(direction=1)
+    ridge.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        prior="ridge",
+    )
+
+    decay = BayesianFrequencyTRF(direction=1)
+    decay.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        prior="decay_ridge",
+        decay_tau=0.010,
+    )
+
+    late_mask = decay.times >= 0.040
+    ridge_late = np.linalg.norm(ridge.weights[0, late_mask, 0])
+    decay_late = np.linalg.norm(decay.weights[0, late_mask, 0])
+
+    assert decay.decay_tau == 0.010
+    assert decay_late < ridge_late
+    assert np.corrcoef(decay.weights[0, :, 0], kernel)[0, 1] > 0.9
+
+
+def test_bayesian_frequency_trf_ard_downweights_irrelevant_features() -> None:
+    rng = np.random.default_rng(36)
+    fs = 1_000
+    tmin = 0.0
+    tmax = 0.030
+    n_samples = 3_072
+    kernel = np.zeros(int(round((tmax - tmin) * fs)))
+    kernel[2] = 0.8
+    kernel[7] = -0.25
+    kernel[12] = 0.1
+
+    stimulus = []
+    response = []
+    for _ in range(8):
+        x = rng.standard_normal((n_samples, 2))
+        y = np.convolve(x[:, 0], kernel, mode="full")[:n_samples]
+        y += 0.05 * rng.standard_normal(n_samples)
+        stimulus.append(x)
+        response.append(y[:, np.newaxis])
+
+    model = BayesianFrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        prior="ard",
+    )
+
+    feature_norms = np.linalg.norm(model.weights[:, :, 0], axis=1)
+    feature_regularization = np.asarray(model.regularization, dtype=float)
+    feature_alpha = np.asarray(model.alpha, dtype=float)
+
+    assert feature_norms[0] > 5.0 * feature_norms[1]
+    assert feature_regularization[1] > feature_regularization[0]
+    assert feature_alpha.shape == (2,)
+    _, score = model.predict(stimulus=stimulus, response=response)
+    assert score > 0.8
+
+
+def test_bayesian_frequency_trf_ard_requires_evidence_mode() -> None:
+    rng = np.random.default_rng(37)
+    stimulus = rng.standard_normal((1_024, 2))
+    response = rng.standard_normal((1_024, 1))
+
+    model = BayesianFrequencyTRF(direction=1)
+    with pytest.raises(ValueError, match="evidence-only"):
+        model.train(
+            stimulus=stimulus,
+            response=response,
+            fs=1_000,
+            tmin=0.0,
+            tmax=0.020,
+            regularization=1e-3,
+            prior="ard",
+        )
 
 
 def test_bayesian_frequency_trf_backward_api() -> None:

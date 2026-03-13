@@ -3,6 +3,10 @@
 This module provides a Bayesian estimator with an API intentionally close to
 ``FrequencyTRF`` while keeping Bayesian-specific outputs such as posterior
 covariance and credible intervals.
+
+The intended default is evidence-based fitting via ``regularization=None``.
+Optional fixed or cross-validated regularization is retained mainly for
+comparison against ``FrequencyTRF``/mTRF-style ridge fits.
 """
 
 from __future__ import annotations
@@ -56,13 +60,17 @@ class BayesianTRFResult:
         Approximate 95% marginal credible interval with shape
         ``(2, n_inputs, n_lags, n_outputs)``.
     alpha:
-        Final prior precision for each output channel.
+        Final prior precision. For ``"ridge"``, ``"smooth"``, and
+        ``"decay_ridge"``, this is one value per output channel. For
+        ``"ard"``, it becomes one value per input feature (and per output, if
+        multiple outputs are fitted).
     beta:
         Final noise precision for each output channel.
     regularization:
-        Equivalent ridge parameter per output on the same scale as
-        :class:`fft_trf.FrequencyTRF`. Internally the spectral solver uses a
-        corresponding FFT-scaled precision.
+        Equivalent ridge parameter on the same scale as
+        :class:`fft_trf.FrequencyTRF`. For ``"ard"``, this becomes one value
+        per input feature instead of one global value per output. Internally the
+        spectral solver uses a corresponding FFT-scaled precision.
     prior:
         Prior type used during fitting.
     fit_mode:
@@ -78,6 +86,8 @@ class BayesianTRFResult:
         Additional metadata about the constructed regression system.
     fs, tmin, tmax, segment_length, n_fft, overlap, window, detrend:
         Core fit metadata mirrored from :class:`fft_trf.FrequencyTRF`.
+    decay_tau:
+        Time constant, in seconds, used by the ``"decay_ridge"`` prior.
     direction:
         Modeling direction used during fitting.
     """
@@ -96,7 +106,7 @@ class BayesianTRFResult:
     fit_mode: str
     converged: np.ndarray
     n_iter: np.ndarray
-    history: list[dict[str, list[float]]]
+    history: list[dict[str, list[Any]]]
     meta: dict[str, Any]
     fs: float
     tmin: float
@@ -106,6 +116,7 @@ class BayesianTRFResult:
     overlap: float
     window: None | str | tuple[str, float] | np.ndarray
     detrend: None | str
+    decay_tau: float | None
     direction: int
 
 
@@ -123,6 +134,18 @@ class BayesianFrequencyTRF:
     weights. Hyperparameters are chosen by empirical Bayes (evidence
     maximization), and the class retains posterior uncertainty information in
     addition to the posterior mean kernel.
+
+    Supported priors are:
+
+    - ``"ridge"``: one global shrinkage value per output
+    - ``"smooth"``: finite-difference smoothness prior over lags
+    - ``"decay_ridge"``: ridge prior with stronger shrinkage at later lags
+    - ``"ard"``: automatic relevance determination with one evidence-updated
+      precision per input feature
+
+    Evidence mode is the recommended default. The optional ``regularization``
+    argument exists mainly to mirror :class:`fft_trf.FrequencyTRF` when you want
+    direct comparisons against fixed-lambda ridge solutions.
     """
 
     def __init__(
@@ -154,7 +177,7 @@ class BayesianFrequencyTRF:
         self.fit_mode: str | None = None
         self.converged: np.ndarray | None = None
         self.n_iter: np.ndarray | None = None
-        self.history: list[dict[str, list[float]]] | None = None
+        self.history: list[dict[str, list[Any]]] | None = None
         self.meta: dict[str, Any] | None = None
 
         self.fs: float | None = None
@@ -166,6 +189,7 @@ class BayesianFrequencyTRF:
         self.window: None | str | tuple[str, float] | np.ndarray = None
         self.detrend: None | str = None
         self.smoothness_order: int | None = None
+        self.decay_tau: float | None = None
         self.energy_thresh: float | None = None
         self.eps: float | None = None
         self.jitter: float | None = None
@@ -181,6 +205,7 @@ class BayesianFrequencyTRF:
         *,
         prior: str = "ridge",
         smoothness_order: int = 2,
+        decay_tau: float | None = None,
         alpha_init: float = 1.0,
         beta_init: float = 1.0,
         max_iter: int = 500,
@@ -205,10 +230,20 @@ class BayesianFrequencyTRF:
         closely as practical:
 
         - ``regularization=None`` enables empirical-Bayes hyperparameter
-          learning.
-        - a scalar ``regularization`` fits a fixed-lambda Bayesian model.
+          learning and is the recommended Bayesian mode.
+        - a scalar ``regularization`` fits a fixed-lambda compatibility model.
         - a sequence of candidate values triggers cross-validation and returns
           per-candidate scores, just like :class:`fft_trf.FrequencyTRF`.
+
+        Prior choices:
+
+        - ``"ridge"`` for global shrinkage
+        - ``"smooth"`` for smooth kernels
+        - ``"decay_ridge"`` for latency-dependent shrinkage
+        - ``"ard"`` for feature-wise relevance learning
+
+        ``"ard"`` is evidence-only and therefore requires
+        ``regularization=None``.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -217,7 +252,20 @@ class BayesianFrequencyTRF:
 
         x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
         _validate_dimensions(x_trials, y_trials)
-        _validate_fit_arguments(fs, tmin, tmax, segment_length, overlap, n_fft, detrend)
+        _validate_fit_arguments(
+            fs,
+            tmin,
+            tmax,
+            segment_length,
+            overlap,
+            n_fft,
+            detrend,
+            prior,
+            decay_tau,
+        )
+
+        if prior == "ard" and regularization is not None:
+            raise ValueError("prior='ard' is evidence-only; use regularization=None.")
 
         if regularization is None:
             self._fit(
@@ -229,6 +277,7 @@ class BayesianFrequencyTRF:
                 regularization=None,
                 prior=prior,
                 smoothness_order=smoothness_order,
+                decay_tau=decay_tau,
                 alpha_init=alpha_init,
                 beta_init=beta_init,
                 max_iter=max_iter,
@@ -260,6 +309,7 @@ class BayesianFrequencyTRF:
                 regularization=float(regularization_values[0]),
                 prior=prior,
                 smoothness_order=smoothness_order,
+                decay_tau=decay_tau,
                 alpha_init=alpha_init,
                 beta_init=beta_init,
                 max_iter=max_iter,
@@ -286,6 +336,7 @@ class BayesianFrequencyTRF:
             regularization_values=regularization_values,
             prior=prior,
             smoothness_order=smoothness_order,
+            decay_tau=decay_tau,
             alpha_init=alpha_init,
             beta_init=beta_init,
             max_iter=max_iter,
@@ -318,6 +369,7 @@ class BayesianFrequencyTRF:
             regularization=float(regularization_values[best_index]),
             prior=prior,
             smoothness_order=smoothness_order,
+            decay_tau=decay_tau,
             alpha_init=alpha_init,
             beta_init=beta_init,
             max_iter=max_iter,
@@ -346,6 +398,7 @@ class BayesianFrequencyTRF:
         regularization: float | None,
         prior: str,
         smoothness_order: int,
+        decay_tau: float | None,
         alpha_init: float,
         beta_init: float,
         max_iter: int,
@@ -371,6 +424,7 @@ class BayesianFrequencyTRF:
             regularization=regularization,
             prior=prior,
             smoothness_order=smoothness_order,
+            decay_tau=decay_tau,
             alpha_init=alpha_init,
             beta_init=beta_init,
             max_iter=max_iter,
@@ -394,7 +448,7 @@ class BayesianFrequencyTRF:
         self.posterior_cov = None if result.posterior_cov is None else result.posterior_cov.copy()
         self.posterior_std = result.posterior_std.copy()
         self.credible_interval = result.credible_interval.copy()
-        self.alpha = result.alpha.copy()
+        self.alpha = _copy_value(result.alpha)
         self.beta = result.beta.copy()
         self.regularization = _copy_value(result.regularization)
         self.prior = result.prior
@@ -413,6 +467,7 @@ class BayesianFrequencyTRF:
         self.window = _copy_value(result.window)
         self.detrend = result.detrend
         self.smoothness_order = smoothness_order
+        self.decay_tau = result.decay_tau
         self.energy_thresh = energy_thresh
         self.eps = eps
         self.jitter = jitter
@@ -428,6 +483,7 @@ class BayesianFrequencyTRF:
         regularization_values: np.ndarray,
         prior: str,
         smoothness_order: int,
+        decay_tau: float | None,
         alpha_init: float,
         beta_init: float,
         max_iter: int,
@@ -486,6 +542,7 @@ class BayesianFrequencyTRF:
                     regularization=float(reg_value),
                     prior=prior,
                     smoothness_order=smoothness_order,
+                    decay_tau=decay_tau,
                     alpha_init=alpha_init,
                     beta_init=beta_init,
                     max_iter=max_iter,
@@ -536,7 +593,7 @@ class BayesianFrequencyTRF:
             posterior_cov=None if self.posterior_cov is None else self.posterior_cov.copy(),
             posterior_std=self.posterior_std.copy(),
             credible_interval=self.credible_interval.copy(),
-            alpha=self.alpha.copy(),
+            alpha=_copy_value(self.alpha),
             beta=self.beta.copy(),
             regularization=_copy_value(self.regularization),
             prior=str(self.prior),
@@ -553,6 +610,7 @@ class BayesianFrequencyTRF:
             overlap=float(self.overlap),
             window=_copy_value(self.window),
             detrend=self.detrend,
+            decay_tau=self.decay_tau,
             direction=int(self.direction),
         )
 
@@ -712,6 +770,7 @@ def fit_bayesian_frequency_trf(
     regularization: float | None = None,
     prior: str = "ridge",
     smoothness_order: int = 2,
+    decay_tau: float | None = None,
     alpha_init: float = 1.0,
     beta_init: float = 1.0,
     max_iter: int = 500,
@@ -727,7 +786,12 @@ def fit_bayesian_frequency_trf(
     trial_weights: None | str | Sequence[float] = None,
     store_covariance: bool = True,
 ) -> BayesianTRFResult:
-    """Compatibility wrapper that returns the Bayesian posterior summary."""
+    """Compatibility wrapper that returns the Bayesian posterior summary.
+
+    ``regularization=None`` keeps the intended evidence-based Bayesian mode.
+    Passing a scalar regularization is mainly useful when you want direct
+    comparisons against fixed-lambda non-Bayesian fits.
+    """
 
     model = BayesianFrequencyTRF(direction=direction)
     model.train(
@@ -739,6 +803,7 @@ def fit_bayesian_frequency_trf(
         regularization=regularization,
         prior=prior,
         smoothness_order=smoothness_order,
+        decay_tau=decay_tau,
         alpha_init=alpha_init,
         beta_init=beta_init,
         max_iter=max_iter,
@@ -836,6 +901,7 @@ def _fit_bayesian_frequency_trf(
     regularization: float | None,
     prior: str,
     smoothness_order: int,
+    decay_tau: float | None,
     alpha_init: float,
     beta_init: float,
     max_iter: int,
@@ -888,13 +954,18 @@ def _fit_bayesian_frequency_trf(
     n_parameters = n_inputs * n_taps
     regularization_scale = float(resolved_n_fft)
 
-    temporal_precision = _make_temporal_prior_precision(
-        n_taps=n_taps,
+    prior_model = _make_prior_model(
+        n_inputs=n_inputs,
+        times=times,
         prior=prior,
         smoothness_order=smoothness_order,
         jitter=jitter,
+        decay_tau=decay_tau,
     )
-    prior_precision = np.kron(np.eye(n_inputs, dtype=float), temporal_precision)
+    prior_precision = prior_model["prior_precision"]
+    group_slices = prior_model["group_slices"]
+    group_precisions = prior_model["group_precisions"]
+    update_mode = prior_model["update_mode"]
 
     gram = design.T @ design
     weights_flat = np.zeros((n_parameters, n_outputs), dtype=float)
@@ -903,9 +974,9 @@ def _fit_bayesian_frequency_trf(
         (n_outputs, n_parameters, n_parameters),
         dtype=float,
     )
-    alpha = np.zeros(n_outputs, dtype=float)
+    alpha = np.zeros((n_outputs, len(group_slices)), dtype=float)
     beta = np.zeros(n_outputs, dtype=float)
-    regularization_values = np.zeros(n_outputs, dtype=float)
+    regularization_values = np.zeros((n_outputs, len(group_slices)), dtype=float)
     converged = np.zeros(n_outputs, dtype=bool)
     n_iter = np.zeros(n_outputs, dtype=int)
     history = []
@@ -913,18 +984,33 @@ def _fit_bayesian_frequency_trf(
     for output_index in range(n_outputs):
         cross = design.T @ targets[:, output_index]
         if regularization is None:
-            result = _evidence_updates(
-                design=design,
-                gram=gram,
-                cross=cross,
-                target=targets[:, output_index],
-                prior_precision=prior_precision,
-                alpha_init=alpha_init,
-                beta_init=beta_init,
-                max_iter=max_iter,
-                tol=tol,
-                regularization_scale=regularization_scale,
-            )
+            if update_mode == "ard":
+                result = _ard_evidence_updates(
+                    design=design,
+                    gram=gram,
+                    cross=cross,
+                    target=targets[:, output_index],
+                    group_slices=group_slices,
+                    group_precisions=group_precisions,
+                    alpha_init=alpha_init,
+                    beta_init=beta_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    regularization_scale=regularization_scale,
+                )
+            else:
+                result = _evidence_updates(
+                    design=design,
+                    gram=gram,
+                    cross=cross,
+                    target=targets[:, output_index],
+                    prior_precision=prior_precision,
+                    alpha_init=alpha_init,
+                    beta_init=beta_init,
+                    max_iter=max_iter,
+                    tol=tol,
+                    regularization_scale=regularization_scale,
+                )
         else:
             result = _fixed_regularization_updates(
                 design=design,
@@ -941,9 +1027,12 @@ def _fit_bayesian_frequency_trf(
         )
         if posterior_cov is not None:
             posterior_cov[output_index] = result["posterior_cov"]
-        alpha[output_index] = result["alpha"]
+        alpha[output_index] = np.asarray(result["alpha"], dtype=float)
         beta[output_index] = result["beta"]
-        regularization_values[output_index] = result["regularization"]
+        regularization_values[output_index] = np.asarray(
+            result["regularization"],
+            dtype=float,
+        )
         converged[output_index] = result["converged"]
         n_iter[output_index] = result["n_iter"]
         history.append(result["history"])
@@ -969,15 +1058,20 @@ def _fit_bayesian_frequency_trf(
         posterior_cov=posterior_cov,
         posterior_std=posterior_std,
         credible_interval=credible_interval,
-        alpha=alpha,
+        alpha=_collapse_parameter_array(alpha),
         beta=beta,
-        regularization=_collapse_output_values(regularization_values),
+        regularization=_collapse_regularization(regularization_values),
         prior=prior,
         fit_mode="evidence" if regularization is None else "fixed_regularization",
         converged=converged,
         n_iter=n_iter,
         history=history,
-        meta=meta,
+        meta={
+            **meta,
+            "prior": prior,
+            "decay_tau": decay_tau,
+            "update_mode": update_mode,
+        },
         fs=float(fs),
         tmin=float(tmin),
         tmax=float(tmax),
@@ -986,6 +1080,7 @@ def _fit_bayesian_frequency_trf(
         overlap=float(overlap),
         window=_copy_value(window),
         detrend=detrend,
+        decay_tau=decay_tau,
         direction=direction,
     )
     return result
@@ -1136,15 +1231,27 @@ def _shift_multichannel(data: np.ndarray, shift: int) -> np.ndarray:
 
 def _make_temporal_prior_precision(
     *,
-    n_taps: int,
+    times: np.ndarray,
     prior: str,
     smoothness_order: int,
     jitter: float,
+    decay_tau: float | None,
 ) -> np.ndarray:
+    n_taps = len(times)
     if prior == "ridge":
         return np.eye(n_taps, dtype=float)
+    if prior == "decay_ridge":
+        effective_tau = decay_tau
+        if effective_tau is None:
+            positive_lags = np.maximum(times, 0.0)
+            duration = float(positive_lags.max()) if positive_lags.size else 0.0
+            step = float(abs(times[1] - times[0])) if times.size > 1 else 1.0
+            effective_tau = max(duration / 3.0, step)
+        lag_offset = np.maximum(times, 0.0)
+        diagonal = np.exp(lag_offset / effective_tau)
+        return np.diag(diagonal + jitter)
     if prior != "smooth":
-        raise ValueError("prior must be either 'ridge' or 'smooth'.")
+        raise ValueError("prior must be one of 'ridge', 'smooth', 'decay_ridge', or 'ard'.")
     if smoothness_order < 1:
         raise ValueError("smoothness_order must be at least 1.")
 
@@ -1154,6 +1261,47 @@ def _make_temporal_prior_precision(
     precision = differences.T @ differences
     precision += jitter * np.eye(n_taps, dtype=float)
     return precision
+
+
+def _make_prior_model(
+    *,
+    n_inputs: int,
+    times: np.ndarray,
+    prior: str,
+    smoothness_order: int,
+    jitter: float,
+    decay_tau: float | None,
+) -> dict[str, Any]:
+    n_taps = len(times)
+    group_slices = [
+        slice(index * n_taps, (index + 1) * n_taps)
+        for index in range(n_inputs)
+    ]
+
+    if prior == "ard":
+        group_precisions = [np.eye(n_taps, dtype=float) for _ in range(n_inputs)]
+        prior_precision = np.kron(np.eye(n_inputs, dtype=float), np.eye(n_taps, dtype=float))
+        return {
+            "prior_precision": prior_precision,
+            "group_slices": group_slices,
+            "group_precisions": group_precisions,
+            "update_mode": "ard",
+        }
+
+    temporal_precision = _make_temporal_prior_precision(
+        times=times,
+        prior=prior,
+        smoothness_order=smoothness_order,
+        jitter=jitter,
+        decay_tau=decay_tau,
+    )
+    prior_precision = np.kron(np.eye(n_inputs, dtype=float), temporal_precision)
+    return {
+        "prior_precision": prior_precision,
+        "group_slices": [slice(0, n_inputs * n_taps)],
+        "group_precisions": [prior_precision],
+        "update_mode": "global",
+    }
 
 
 def _rfft_design(n_fft: int, n_taps: int) -> tuple[np.ndarray, np.ndarray]:
@@ -1232,6 +1380,100 @@ def _evidence_updates(
     return {
         "weights": weights,
         "posterior_cov": posterior_cov,
+        "alpha": np.asarray([alpha], dtype=float),
+        "beta": beta,
+        "regularization": np.asarray(
+            [(alpha / max(beta, floor)) / regularization_scale],
+            dtype=float,
+        ),
+        "converged": converged,
+        "n_iter": iteration,
+        "history": history,
+    }
+
+
+def _ard_evidence_updates(
+    *,
+    design: np.ndarray,
+    gram: np.ndarray,
+    cross: np.ndarray,
+    target: np.ndarray,
+    group_slices: Sequence[slice],
+    group_precisions: Sequence[np.ndarray],
+    alpha_init: float,
+    beta_init: float,
+    max_iter: int,
+    tol: float,
+    regularization_scale: float,
+) -> dict[str, Any]:
+    n_obs = target.shape[0]
+    n_parameters = gram.shape[0]
+    floor = np.finfo(float).eps
+    identity = np.eye(n_parameters, dtype=float)
+
+    alpha = np.full(len(group_slices), float(alpha_init), dtype=float)
+    beta = float(beta_init)
+    history = {
+        "alpha": [alpha.copy()],
+        "beta": [beta],
+        "regularization": [(alpha / max(beta, floor)) / regularization_scale],
+    }
+
+    posterior_cov = identity.copy()
+    weights = np.zeros(n_parameters, dtype=float)
+    converged = False
+    for iteration in range(1, max_iter + 1):
+        posterior_precision = beta * gram.copy()
+        for alpha_value, group_slice, group_precision in zip(
+            alpha,
+            group_slices,
+            group_precisions,
+            strict=True,
+        ):
+            posterior_precision[group_slice, group_slice] += alpha_value * group_precision
+
+        chol = cho_factor(posterior_precision, lower=True, check_finite=False)
+        posterior_cov = cho_solve(chol, identity, check_finite=False)
+        weights = beta * cho_solve(chol, cross, check_finite=False)
+
+        new_alpha = np.zeros_like(alpha)
+        gamma_total = 0.0
+        for group_index, (group_slice, group_precision) in enumerate(
+            zip(group_slices, group_precisions, strict=True)
+        ):
+            block_cov = posterior_cov[group_slice, group_slice]
+            block_weights = weights[group_slice]
+            block_size = group_slice.stop - group_slice.start
+            gamma = block_size - alpha[group_index] * np.trace(block_cov @ group_precision)
+            gamma = float(np.clip(gamma, 0.0, block_size))
+            weight_energy = max(
+                float(block_weights.T @ group_precision @ block_weights),
+                floor,
+            )
+            new_alpha[group_index] = max(gamma / weight_energy, floor)
+            gamma_total += gamma
+
+        residual = target - design @ weights
+        residual_energy = max(float(residual.T @ residual), floor)
+        beta_new = max((n_obs - gamma_total) / residual_energy, floor)
+
+        history["alpha"].append(new_alpha.copy())
+        history["beta"].append(beta_new)
+        history["regularization"].append(
+            (new_alpha / max(beta_new, floor)) / regularization_scale
+        )
+
+        alpha_change = np.max(np.abs(new_alpha - alpha) / np.maximum(alpha, floor))
+        beta_change = abs(beta_new - beta) / max(beta, floor)
+        alpha = new_alpha
+        beta = beta_new
+        if max(alpha_change, beta_change) < tol:
+            converged = True
+            break
+
+    return {
+        "weights": weights,
+        "posterior_cov": posterior_cov,
         "alpha": alpha,
         "beta": beta,
         "regularization": (alpha / max(beta, floor)) / regularization_scale,
@@ -1272,15 +1514,15 @@ def _fixed_regularization_updates(
     return {
         "weights": weights,
         "posterior_cov": system_inv / beta,
-        "alpha": alpha,
+        "alpha": np.asarray([alpha], dtype=float),
         "beta": beta,
-        "regularization": regularization,
+        "regularization": np.asarray([regularization], dtype=float),
         "converged": True,
         "n_iter": 1,
         "history": {
-            "alpha": [alpha],
+            "alpha": [np.asarray([alpha], dtype=float)],
             "beta": [beta],
-            "regularization": [regularization],
+            "regularization": [np.asarray([regularization], dtype=float)],
         },
     }
 
@@ -1312,6 +1554,8 @@ def _validate_fit_arguments(
     overlap: float,
     n_fft: int | None,
     detrend: None | str,
+    prior: str,
+    decay_tau: float | None,
 ) -> None:
     if fs <= 0:
         raise ValueError("fs must be positive.")
@@ -1325,6 +1569,12 @@ def _validate_fit_arguments(
         raise ValueError("n_fft must be positive.")
     if detrend not in (None, "constant", "linear"):
         raise ValueError("detrend must be None, 'constant', or 'linear'.")
+    if prior not in {"ridge", "smooth", "decay_ridge", "ard"}:
+        raise ValueError(
+            "prior must be one of 'ridge', 'smooth', 'decay_ridge', or 'ard'."
+        )
+    if decay_tau is not None and decay_tau <= 0:
+        raise ValueError("decay_tau must be positive when provided.")
 
 
 def _slice_result_weights(
@@ -1345,10 +1595,21 @@ def _slice_result_weights(
     return result.weights[:, mask, :].copy(), result.times[mask].copy()
 
 
-def _collapse_output_values(values: np.ndarray) -> float | np.ndarray:
-    if values.shape == (1,):
-        return float(values[0])
+def _collapse_parameter_array(values: np.ndarray) -> np.ndarray:
+    if values.shape == (1, 1):
+        return values.reshape(1).copy()
+    if values.shape[0] == 1:
+        return values[0].copy()
+    if values.shape[1] == 1:
+        return values[:, 0].copy()
     return values.copy()
+
+
+def _collapse_regularization(values: np.ndarray) -> np.ndarray | float:
+    collapsed = _collapse_parameter_array(values)
+    if collapsed.shape == (1,):
+        return float(collapsed[0])
+    return collapsed
 
 
 def _copy_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1370,7 +1631,10 @@ def _copy_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
     return copied
 
 
-def _copy_history(history: list[dict[str, list[float]]] | None) -> list[dict[str, list[float]]] | None:
+def _copy_history(history: list[dict[str, list[Any]]] | None) -> list[dict[str, list[Any]]] | None:
     if history is None:
         return None
-    return [{key: values[:] for key, values in item.items()} for item in history]
+    copied: list[dict[str, list[Any]]] = []
+    for item in history:
+        copied.append({key: _copy_value(values) for key, values in item.items()})
+    return copied

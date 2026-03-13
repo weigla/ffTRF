@@ -192,8 +192,7 @@ model.train(
     fs=1_000,
     tmin=0.0,
     tmax=0.04,
-    regularization=1e-3,
-    prior="ridge",
+    prior="smooth",
 )
 prediction, score = model.predict(stimulus=stimulus, response=response)
 ```
@@ -202,14 +201,50 @@ It is intentionally not part of the root package API because it is more of a
 research tool than a stable core interface, but it now mirrors the main
 estimator's training API much more closely:
 
-- pass a scalar `regularization` for `FrequencyTRF`/mTRF-like ridge behavior
+- keep `regularization=None` for the intended evidence-based Bayesian fit
+- pass a scalar `regularization` only when you explicitly want
+  `FrequencyTRF`/mTRF-like fixed-lambda behavior
 - pass a sequence of `regularization` values for cross-validated model
   selection
-- pass `regularization=None` to switch into empirical-Bayes mode
+
+Available priors:
+
+- `ridge`: one global shrinkage value per output
+- `smooth`: finite-difference smoothness over lags
+- `decay_ridge`: stronger shrinkage at later lags, useful for short-latency
+  responses such as ABRs
+- `ard`: automatic relevance determination with one evidence-updated precision
+  per input feature, useful when some regressors may be irrelevant
+
+Examples:
+
+```python
+# Recommended Bayesian mode: learn the amount of shrinkage from the data.
+model.train(stimulus, response, fs=1_000, tmin=0.0, tmax=0.04, prior="smooth")
+
+# Later lags are penalized more strongly than early lags.
+model.train(
+    stimulus,
+    response,
+    fs=1_000,
+    tmin=-0.005,
+    tmax=0.030,
+    prior="decay_ridge",
+    decay_tau=0.008,
+)
+
+# Feature-wise relevance learning for multi-regressor models.
+model.train(stimulus, response, fs=1_000, tmin=0.0, tmax=0.04, prior="ard")
+```
+
+`ard` is evidence-only, because its whole purpose is to learn separate
+relevance parameters from the data rather than accept a fixed ridge constant.
 
 On top of the usual `weights`, `times`, `predict`, and `score`, it also exposes
 posterior covariance, credible intervals, and the learned `alpha`, `beta`, and
-effective `regularization` values.
+effective `regularization` values. Fixed `regularization` is still available for
+parity checks against non-Bayesian estimators, but it is not the recommended
+default for the Bayesian solver.
 
 ## Packaging notes
 
