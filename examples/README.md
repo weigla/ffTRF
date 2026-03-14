@@ -29,17 +29,18 @@ practical with `FrequencyTRF`:
   Multiple stimulus features, multiple response channels, forward model.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
-- `run_all_examples.py`
-  Runs all four examples and saves the resulting figures.
 
-Individual example commands:
+Each example is intentionally a plain Python script showing the API calls,
+learned attributes, and one corresponding figure. Running a script prints the
+relevant `FrequencyTRF` attributes and saves a figure under `artifacts/examples/`.
+
+Example commands:
 
 ```bash
-python examples/example_single_trial_single_channel.py --output artifacts/examples/single_trial_single_channel.png --no-show
-python examples/example_multi_trial_single_channel.py --output artifacts/examples/multi_trial_single_channel.png --no-show
-python examples/example_multifeature_multichannel.py --output artifacts/examples/multifeature_multichannel.png --no-show
-python examples/example_backward_decoding.py --output artifacts/examples/backward_decoding.png --no-show
-python examples/run_all_examples.py --output-dir artifacts/examples --no-show
+python examples/example_single_trial_single_channel.py
+python examples/example_multi_trial_single_channel.py
+python examples/example_multifeature_multichannel.py
+python examples/example_backward_decoding.py
 ```
 
 Run the comparison demo with Pixi:
@@ -47,7 +48,6 @@ Run the comparison demo with Pixi:
 ```bash
 pixi run -e compare compare-demo
 pixi run -e compare benchmark-demo
-pixi run -e compare examples-demo
 ```
 
 Or with pip:
@@ -56,5 +56,4 @@ Or with pip:
 pip install -e ".[compare]" mtrf
 python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show
 python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md
-python examples/run_all_examples.py --output-dir artifacts/examples --no-show
 ```

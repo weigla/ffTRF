@@ -96,16 +96,12 @@ The repository also includes simulated end-to-end examples under
 - multiple stimulus features and multiple response channels
 - backward decoding from multichannel responses to one stimulus
 
-Run all of them with:
+Each example is a simple Python script that shows how the API is called, which
+attributes are available after fitting, and what a typical visualization looks
+like. For example:
 
 ```bash
-pixi run -e compare examples-demo
-```
-
-or:
-
-```bash
-python examples/run_all_examples.py --output-dir artifacts/examples --no-show
+python examples/example_multi_trial_single_channel.py
 ```
 
 ## What A Frequency-Domain TRF Solves
@@ -256,7 +252,7 @@ Interpretation:
   object for a standard time-domain fit and scales linearly with both recording
   length and lag count.
 
-For a JOSS-style evaluation, the next natural step would be to extend this
+For a broader evaluation, the next natural step would be to extend this
 benchmark grid across:
 
 - multiple numbers of input features and output channels

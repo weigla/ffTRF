@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -16,26 +15,9 @@ from simulated_data import (
     require_matplotlib,
 )
 
+OUTPUT_PATH = Path("artifacts/examples/backward_decoding.png")
 
-def build_parser() -> argparse.ArgumentParser:
-    """Create the CLI parser."""
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("artifacts/examples/backward_decoding.png"),
-        help="Where to save the figure.",
-    )
-    parser.add_argument(
-        "--no-show",
-        action="store_true",
-        help="Save the figure without opening a window.",
-    )
-    return parser
-
-
-def run_example(*, output_path: str | Path | None, show: bool) -> None:
+def main() -> None:
     """Fit a backward model and visualize the decoded stimulus."""
 
     dataset = build_backward_decoding_dataset()
@@ -64,6 +46,11 @@ def run_example(*, output_path: str | Path | None, show: bool) -> None:
     print("Example: backward decoding")
     print(f"  description: {dataset.description}")
     print(f"  decoding correlation: {float(score):.4f}")
+    print(f"  regularization: {model.regularization}")
+    print(f"  segment_length: {model.segment_length}")
+    print(f"  n_fft: {model.n_fft}")
+    print(f"  weights shape: {model.weights.shape}")
+    print(f"  saved figure: {OUTPUT_PATH}")
 
     plt = require_matplotlib()
     fig, axes = plt.subplots(2, 1, figsize=(10, 7))
@@ -92,14 +79,7 @@ def run_example(*, output_path: str | Path | None, show: bool) -> None:
     axes[1].grid(alpha=0.2, linewidth=0.6)
 
     fig.tight_layout()
-    finalize_figure(fig, output_path=output_path, show=show)
-
-
-def main() -> None:
-    """Run the example script."""
-
-    args = build_parser().parse_args()
-    run_example(output_path=args.output, show=not args.no_show)
+    finalize_figure(fig, output_path=OUTPUT_PATH, show=False)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
 import numpy as np
@@ -16,26 +15,9 @@ from simulated_data import (
     require_matplotlib,
 )
 
+OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel.png")
 
-def build_parser() -> argparse.ArgumentParser:
-    """Create the CLI parser."""
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("artifacts/examples/multifeature_multichannel.png"),
-        help="Where to save the figure.",
-    )
-    parser.add_argument(
-        "--no-show",
-        action="store_true",
-        help="Save the figure without opening a window.",
-    )
-    return parser
-
-
-def run_example(*, output_path: str | Path | None, show: bool) -> None:
+def main() -> None:
     """Fit a multivariate forward model and visualize all kernels."""
 
     dataset = build_multifeature_multichannel_dataset()
@@ -66,13 +48,17 @@ def run_example(*, output_path: str | Path | None, show: bool) -> None:
     print("Example: multiple features, multiple outputs")
     print(f"  description: {dataset.description}")
     print(f"  held-out channel scores: {np.array2string(scores, precision=4)}")
+    print(f"  regularization: {model.regularization}")
+    print(f"  segment_length: {model.segment_length}")
+    print(f"  n_fft: {model.n_fft}")
+    print(f"  weights shape: {model.weights.shape}")
+    print(f"  saved figure: {OUTPUT_PATH}")
 
     plt = require_matplotlib()
     fig, axes = plt.subplots(
         3,
         2,
         figsize=(11, 9),
-        sharex="col",
         gridspec_kw={"height_ratios": [1.0, 1.0, 0.8]},
     )
     feature_names = ["Envelope", "Onset"]
@@ -99,8 +85,6 @@ def run_example(*, output_path: str | Path | None, show: bool) -> None:
             ax.set_ylabel("Weight")
             ax.grid(alpha=0.2, linewidth=0.6)
 
-    for ax in axes[-1, :]:
-        ax.set_visible(False)
     for ax in axes[1, :]:
         ax.set_xlabel("Lag (ms)")
     axes[0, 0].legend(loc="upper right")
@@ -126,14 +110,7 @@ def run_example(*, output_path: str | Path | None, show: bool) -> None:
     axes[2, 1].legend(loc="upper right")
 
     fig.tight_layout()
-    finalize_figure(fig, output_path=output_path, show=show)
-
-
-def main() -> None:
-    """Run the example script."""
-
-    args = build_parser().parse_args()
-    run_example(output_path=args.output, show=not args.no_show)
+    finalize_figure(fig, output_path=OUTPUT_PATH, show=False)
 
 
 if __name__ == "__main__":
