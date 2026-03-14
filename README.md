@@ -12,6 +12,9 @@ estimator:
 - scalar or cross-validated ridge regularization
 - multi-trial input via Python lists of arrays
 - time-domain kernel export for interpretation
+- cached spectral statistics for faster regularization search
+- optional trial-bootstrap confidence intervals
+- single-kernel and full-kernel-grid plotting
 - lightweight preprocessing helpers for resampling, half-wave rectification, and
   inverse-variance trial weighting
 
@@ -95,6 +98,9 @@ The repository also includes simulated end-to-end examples under
 - multiple trials with cross-validated regularization
 - multiple stimulus features and multiple response channels
 - backward decoding from multichannel responses to one stimulus
+- bootstrap confidence intervals for one recovered kernel
+- trial weighting with `inverse_variance_weights(...)`
+- model serialization with `save(...)`, `load(...)`, and `to_impulse_response(...)`
 
 Each example is a simple Python script that shows how the API is called, which
 attributes are available after fitting, and what a typical visualization looks
@@ -102,6 +108,9 @@ like. For example:
 
 ```bash
 python examples/example_multi_trial_single_channel.py
+python examples/example_bootstrap_confidence_interval.py
+python examples/example_trial_weighting.py
+python examples/example_save_and_load.py
 ```
 
 ## What A Frequency-Domain TRF Solves
@@ -208,7 +217,7 @@ be faster. The benchmark below shows that crossover clearly.
 
 The repository includes a reproducible runtime benchmark in
 `examples/benchmark_runtime.py`. It compares `FrequencyTRF` to a standard
-time-domain `mTRFpy` fit using the same lag window and fixed ridge value.
+time-domain `mTRFpy` fit across a wider grid of synthetic scenarios.
 
 Run it with:
 
@@ -225,41 +234,57 @@ Benchmark environment used for the table below:
 - SciPy: 1.17.1
 - mTRFpy: 2.1.2
 - 3 timed repetitions after 1 warmup run
+- median per-fit peak RSS measured in isolated worker processes
 
-All scenarios use a forward single-feature / single-output model with
-`segment_length=None` and `window=None`, which is the closest mTRF-like
-configuration.
+The current grid covers:
 
-| Scenario | fs (Hz) | Trials | Samples/trial | Lags | Approx. lag matrix (MiB) | FrequencyTRF median fit (s) | mTRFpy median fit (s) | mTRFpy / FrequencyTRF | Kernel corr. |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Moderate length, 1 kHz | 1000 | 8 | 4096 | 40 | 10.0 | 0.0111 | 0.0086 | 0.77x | 1.0000 |
-| Long recording, 1 kHz | 1000 | 4 | 60000 | 40 | 73.2 | 0.1490 | 0.0412 | 0.28x | 1.0000 |
-| High rate, 10 kHz | 10000 | 2 | 30000 | 300 | 137.3 | 0.0859 | 0.1274 | 1.48x | 1.0000 |
-| Long high rate, 10 kHz | 10000 | 2 | 60000 | 300 | 274.7 | 0.1463 | 0.2758 | 1.89x | 1.0000 |
+- fixed-ridge whole-trial fits
+- multifeature / multichannel fits
+- longer lag windows
+- cross-validated ridge selection
+- segmented spectral estimation with a Hann window
+
+All scenarios use forward regression on the same simulated data for both
+methods. Fixed-ridge scenarios use the same lambda in both toolboxes, and the
+cross-validated scenario uses the same candidate grid in both. Kernel
+correlation is computed over the flattened full kernel bank.
+
+| Scenario | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Approx. lag matrix (MiB) | FrequencyTRF median fit (s) | FrequencyTRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | mTRFpy / FrequencyTRF | Kernel corr. |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Moderate length | 1->1 | fixed | whole-trial | 1000 | 8 | 4096 | 40 | 10.0 | 0.0112 | 98.7 | 0.0094 | 131.5 | 0.84x | 1.0000 |
+| Long recording | 1->1 | fixed | whole-trial | 1000 | 4 | 60000 | 40 | 73.2 | 0.1524 | 109.9 | 0.0468 | 184.4 | 0.31x | 1.0000 |
+| High rate | 1->1 | fixed | whole-trial | 10000 | 2 | 30000 | 300 | 137.3 | 0.0743 | 101.0 | 0.1416 | 336.2 | 1.90x | 1.0000 |
+| Long high rate | 1->1 | fixed | whole-trial | 10000 | 2 | 60000 | 300 | 274.7 | 0.1497 | 106.2 | 0.2743 | 538.7 | 1.83x | 1.0000 |
+| Multifeature / multichannel | 3->2 | fixed | whole-trial | 1000 | 6 | 4096 | 40 | 22.5 | 0.0148 | 105.1 | 0.0223 | 154.9 | 1.51x | 1.0000 |
+| Longer lag window | 1->1 | fixed | whole-trial | 10000 | 2 | 30000 | 600 | 274.7 | 0.0746 | 100.9 | 0.3810 | 542.4 | 5.11x | 1.0000 |
+| Cross-validated ridge | 1->1 | cv-8 (k=4) | whole-trial | 10000 | 4 | 30000 | 300 | 274.7 | 2.4832 | 109.9 | 1.5299 | 363.2 | 0.62x | 1.0000 |
+| Segmented Hann estimate | 1->1 | fixed | seg=4096, ov=0.5, hann | 10000 | 2 | 60000 | 300 | 274.7 | 0.0159 | 99.7 | 0.2848 | 540.5 | 17.93x | 1.0000 |
 
 Interpretation:
 
 - At modest lag counts, the standard time-domain fit is still faster on this
   machine.
-- As the lag count grows with sampling rate, the frequency-domain formulation
-  becomes more competitive and eventually faster.
+- As lag count, sampling rate, or feature count grows, the frequency-domain
+  formulation becomes more competitive and often faster.
 - In the table above, values below `1.0x` mean `mTRFpy` was faster; values
   above `1.0x` mean `FrequencyTRF` was faster.
 - Kernel correlations of `1.0000` in these synthetic tests indicate that both
-  approaches recover essentially the same filter under the matched settings used
-  here.
+  approaches recover essentially the same flattened kernel bank under the
+  matched settings used here.
 - The approximate lag-matrix size is included because it is the dominant memory
   object for a standard time-domain fit and scales linearly with both recording
-  length and lag count.
+  length and feature-weight count.
+- Peak RSS is consistently lower for `FrequencyTRF` in this grid, with the gap
+  widening substantially in the high-rate and longer-lag scenarios.
+- The cross-validated scenario is where cached spectra matter most for
+  `FrequencyTRF`, because the FFT work is reused across lambda candidates, even
+  though `mTRFpy` is still faster in that specific benchmark on this machine.
+- The segmented Hann scenario is intentionally not the closest mTRF-like
+  setting; it illustrates a more typical spectral-estimation workflow for
+  frequency-domain fitting.
 
-For a broader evaluation, the next natural step would be to extend this
-benchmark grid across:
-
-- multiple numbers of input features and output channels
-- longer lag windows
-- cross-validated regularization
-- segmented spectral estimation settings
-- peak memory usage in addition to wall-clock time
+Further extensions that would still be useful are negative-lag settings and
+trial-weighted fits in the benchmark grid.
 
 ## API Summary
 
@@ -280,6 +305,9 @@ Important methods:
 - `predict(...)`
 - `score(...)`
 - `plot(...)`
+- `plot_grid(...)`
+- `bootstrap_confidence_interval(...)`
+- `bootstrap_interval_at(...)`
 - `to_impulse_response(...)`
 - `save(...)` / `load(...)`
 

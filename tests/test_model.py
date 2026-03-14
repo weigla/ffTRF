@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 
+import fft_trf.model as model_module
 import numpy as np
 import pytest
 
@@ -98,6 +99,49 @@ def test_train_selects_regularization_and_predicts_held_out_data() -> None:
     assert scores.shape == (7,)
     _, held_out_score = model.predict(stimulus=test_x, response=test_y)
     assert held_out_score > 0.8
+
+
+def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    rng = np.random.default_rng(8)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[3] = 0.9
+    kernel[8] = -0.35
+    kernel[15] = 0.12
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=8,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    call_count = 0
+    original = model_module._build_spectral_cache
+
+    def counting_cache(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(model_module, "_build_spectral_cache", counting_cache)
+
+    model = FrequencyTRF(direction=1)
+    scores = model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=np.logspace(-5, 0, 6),
+        segment_length=512,
+        overlap=0.5,
+        k=4,
+    )
+
+    assert scores.shape == (6,)
+    assert call_count == 1
 
 
 def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
@@ -200,6 +244,46 @@ def test_multichannel_prediction_and_helpers() -> None:
     assert abs(resampled.shape[0] - 50) <= 1
 
 
+def test_frequency_trf_stores_bootstrap_interval() -> None:
+    rng = np.random.default_rng(12)
+    fs = 1_000
+    kernel = np.zeros(40)
+    kernel[4] = 1.0
+    kernel[11] = -0.45
+    kernel[19] = 0.2
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=3_072,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.040,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        bootstrap_samples=24,
+        bootstrap_level=0.9,
+        bootstrap_seed=0,
+    )
+
+    interval, times = model.bootstrap_interval_at()
+    assert interval.shape == (2, *model.weights.shape)
+    assert times.shape == model.times.shape
+    assert model.bootstrap_level == 0.9
+    assert model.bootstrap_samples == 24
+    assert np.all(interval[0] <= interval[1])
+    assert np.mean((model.weights >= interval[0]) & (model.weights <= interval[1])) > 0.7
+
+
 def test_optional_comparison_helper_runs_without_mtrf_dependency() -> None:
     comparison_path = Path(__file__).resolve().parent.parent / "examples" / "comparison_utils.py"
     spec = importlib.util.spec_from_file_location("comparison_utils", comparison_path)
@@ -254,3 +338,84 @@ def test_frequency_trf_plot_if_matplotlib_available() -> None:
     assert ax.get_xlabel() == "Lag (ms)"
     assert ax.get_ylabel() == "Weight"
     plt.close(fig)
+
+
+def test_frequency_trf_plot_grid_if_matplotlib_available() -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(20)
+    fs = 500
+    n_samples = 2_048
+
+    stimulus = []
+    response = []
+    for _ in range(5):
+        x = rng.standard_normal((n_samples, 2))
+        y = np.column_stack(
+            [
+                np.convolve(x[:, 0], np.array([0.0, 0.8, -0.2]), mode="full")[:n_samples]
+                + np.convolve(x[:, 1], np.array([0.0, 0.0, 0.3]), mode="full")[:n_samples],
+                np.convolve(x[:, 0], np.array([0.0, -0.1, 0.4]), mode="full")[:n_samples]
+                + np.convolve(x[:, 1], np.array([0.0, 0.6, 0.0]), mode="full")[:n_samples],
+            ]
+        )
+        y += 0.04 * rng.standard_normal(y.shape)
+        stimulus.append(x)
+        response.append(y)
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=1e-3,
+        segment_length=256,
+        overlap=0.5,
+        bootstrap_samples=12,
+        bootstrap_seed=1,
+    )
+
+    fig, axes = model.plot_grid(
+        input_labels=["Feature 1", "Feature 2"],
+        output_labels=["Channel 1", "Channel 2"],
+        show_bootstrap_interval=True,
+    )
+    assert axes.shape == (2, 2)
+    assert axes[1, 0].get_xlabel() == "Lag (ms)"
+    assert "Feature 1" in axes[0, 0].get_title()
+    plt.close(fig)
+
+
+def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:
+    pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(22)
+    fs = 1_000
+    kernel = np.zeros(20)
+    kernel[2] = 0.9
+    kernel[5] = -0.25
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=3,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.020,
+        regularization=1e-3,
+    )
+
+    with pytest.raises(IndexError):
+        model.plot(input_index=1)
+    with pytest.raises(IndexError):
+        model.plot(output_index=1)

@@ -15,7 +15,8 @@ from simulated_data import (
     require_matplotlib,
 )
 
-OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel.png")
+KERNEL_OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel_kernels.png")
+PREDICTION_OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel_predictions.png")
 
 def main() -> None:
     """Fit a multivariate forward model and visualize all kernels."""
@@ -52,65 +53,44 @@ def main() -> None:
     print(f"  segment_length: {model.segment_length}")
     print(f"  n_fft: {model.n_fft}")
     print(f"  weights shape: {model.weights.shape}")
-    print(f"  saved figure: {OUTPUT_PATH}")
+    print(f"  kernel figure: {KERNEL_OUTPUT_PATH}")
+    print(f"  prediction figure: {PREDICTION_OUTPUT_PATH}")
 
     plt = require_matplotlib()
-    fig, axes = plt.subplots(
-        3,
-        2,
-        figsize=(11, 9),
-        gridspec_kw={"height_ratios": [1.0, 1.0, 0.8]},
+    kernel_fig, _ = model.plot_grid(
+        input_labels=["Envelope", "Onset"],
+        output_labels=["Channel 1", "Channel 2"],
+        title="Recovered multifeature / multichannel kernels",
+        sharey=False,
     )
-    feature_names = ["Envelope", "Onset"]
-    channel_names = ["Channel 1", "Channel 2"]
-
-    for input_index in range(2):
-        for output_index in range(2):
-            ax = axes[input_index, output_index]
-            ax.plot(
-                dataset.times * 1e3,
-                dataset.true_weights[input_index, :, output_index],
-                label="True",
-                color="#111111",
-                linewidth=2.0,
-            )
-            ax.plot(
-                model.times * 1e3,
-                model.weights[input_index, :, output_index],
-                label="Recovered",
-                color="#3366CC",
-                linewidth=1.6,
-            )
-            ax.set_title(f"{feature_names[input_index]} -> {channel_names[output_index]}")
-            ax.set_ylabel("Weight")
-            ax.grid(alpha=0.2, linewidth=0.6)
-
-    for ax in axes[1, :]:
-        ax.set_xlabel("Lag (ms)")
-    axes[0, 0].legend(loc="upper right")
+    for ax_index, ax in enumerate(kernel_fig.axes):
+        input_index = ax_index // 2
+        output_index = ax_index % 2
+        ax.plot(
+            dataset.times * 1e3,
+            dataset.true_weights[input_index, :, output_index],
+            color="#111111",
+            linewidth=1.2,
+            linestyle="--",
+            label="True kernel" if ax_index == 0 else None,
+        )
+    if kernel_fig.axes:
+        kernel_fig.axes[0].legend(loc="upper right", frameon=False)
+    finalize_figure(kernel_fig, output_path=KERNEL_OUTPUT_PATH, show=False)
 
     time = np.arange(test_stimulus.shape[0]) / dataset.fs
-    snippet = time <= 1.5
-    axes[2, 0].set_visible(True)
-    axes[2, 0].plot(time[snippet], test_response[snippet, 0], label="Observed", color="#111111", linewidth=1.1)
-    axes[2, 0].plot(time[snippet], prediction[snippet, 0], label="Predicted", color="#C84C09", linewidth=1.0)
-    axes[2, 0].set_title("Held-out prediction, channel 1")
-    axes[2, 0].set_xlabel("Time (s)")
-    axes[2, 0].set_ylabel("Response")
-    axes[2, 0].grid(alpha=0.2, linewidth=0.6)
-    axes[2, 0].legend(loc="upper right")
-
-    axes[2, 1].set_visible(True)
-    axes[2, 1].plot(time[snippet], test_response[snippet, 1], label="Observed", color="#111111", linewidth=1.1)
-    axes[2, 1].plot(time[snippet], prediction[snippet, 1], label="Predicted", color="#C84C09", linewidth=1.0)
-    axes[2, 1].set_title("Held-out prediction, channel 2")
-    axes[2, 1].set_xlabel("Time (s)")
-    axes[2, 1].set_ylabel("Response")
-    axes[2, 1].grid(alpha=0.2, linewidth=0.6)
-    axes[2, 1].legend(loc="upper right")
-
-    fig.tight_layout()
-    finalize_figure(fig, output_path=OUTPUT_PATH, show=False)
+    snippet = time <= 2.5
+    prediction_fig, prediction_axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    for channel_index, ax in enumerate(prediction_axes):
+        ax.plot(time[snippet], test_response[snippet, channel_index], label="Observed", color="#111111", linewidth=1.2)
+        ax.plot(time[snippet], prediction[snippet, channel_index], label="Predicted", color="#C84C09", linewidth=1.0)
+        ax.set_title(f"Held-out response, channel {channel_index + 1}")
+        ax.set_ylabel("Response")
+        ax.grid(alpha=0.2, linewidth=0.6)
+        ax.legend(loc="upper right")
+    prediction_axes[-1].set_xlabel("Time (s)")
+    prediction_fig.tight_layout()
+    finalize_figure(prediction_fig, output_path=PREDICTION_OUTPUT_PATH, show=False)
 
 
 if __name__ == "__main__":

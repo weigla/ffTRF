@@ -15,6 +15,7 @@ rates, or represented by many lagged samples.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import pickle
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -23,6 +24,8 @@ import numpy as np
 from scipy.fft import next_fast_len
 from scipy.signal import detrend as scipy_detrend
 from scipy.signal import fftconvolve, get_window
+
+_USE_STORED_TRIAL_WEIGHTS = object()
 
 
 def pearsonr(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
@@ -120,6 +123,36 @@ def _normalize_trial_weights(
     y_trials: Sequence[np.ndarray],
     trial_weights: None | str | Sequence[float],
 ) -> np.ndarray:
+    return _normalize_weight_vector(_resolve_raw_trial_weights(y_trials, trial_weights))
+
+
+def _copy_value(value):
+    if isinstance(value, np.ndarray):
+        return value.copy()
+    if isinstance(value, list):
+        return [_copy_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _copy_value(item) for key, item in value.items()}
+    return value
+
+
+@dataclass(slots=True)
+class _SpectralCache:
+    """Per-trial spectral sufficient statistics reused across repeated fits."""
+
+    trial_cxx: np.ndarray
+    trial_cxy: np.ndarray
+    segment_length: int
+    n_fft: int
+    overlap: float
+    window: None | str | tuple[str, float] | np.ndarray
+    detrend: None | str
+
+
+def _resolve_raw_trial_weights(
+    y_trials: Sequence[np.ndarray],
+    trial_weights: None | str | Sequence[float],
+) -> np.ndarray:
     if trial_weights is None:
         weights = np.ones(len(y_trials), dtype=float)
     elif isinstance(trial_weights, str):
@@ -135,20 +168,17 @@ def _normalize_trial_weights(
         if weights.shape != (len(y_trials),):
             raise ValueError("Explicit trial weights must match the number of trials.")
 
+    if np.any(~np.isfinite(weights)) or np.any(weights < 0.0):
+        raise ValueError("Trial weights must be finite and non-negative.")
+    return weights
+
+
+def _normalize_weight_vector(weights: np.ndarray) -> np.ndarray:
+    weights = np.asarray(weights, dtype=float)
     total = float(weights.sum())
     if not np.isfinite(total) or total <= 0:
         raise ValueError("Trial weights must sum to a positive finite value.")
     return weights / total
-
-
-def _copy_value(value):
-    if isinstance(value, np.ndarray):
-        return value.copy()
-    if isinstance(value, list):
-        return [_copy_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _copy_value(item) for key, item in value.items()}
-    return value
 
 
 def _prepare_segment(
@@ -208,6 +238,242 @@ def _iter_segments(
         yield x_trial[start:n_samples], y_trial[start:n_samples]
 
 
+def _resolve_spectral_settings(
+    x_trials: Sequence[np.ndarray],
+    *,
+    segment_length: int | None,
+    n_fft: int | None,
+) -> tuple[int, int]:
+    resolved_segment_length = (
+        max(trial.shape[0] for trial in x_trials)
+        if segment_length is None
+        else int(segment_length)
+    )
+    resolved_n_fft = (
+        next_fast_len(resolved_segment_length)
+        if n_fft is None
+        else int(n_fft)
+    )
+    if resolved_n_fft < resolved_segment_length:
+        raise ValueError("n_fft must be at least as large as segment_length.")
+    return resolved_segment_length, resolved_n_fft
+
+
+def _build_spectral_cache(
+    x_trials: Sequence[np.ndarray],
+    y_trials: Sequence[np.ndarray],
+    *,
+    segment_length: int | None,
+    overlap: float,
+    n_fft: int | None,
+    window: None | str | tuple[str, float] | np.ndarray,
+    detrend: None | str,
+) -> _SpectralCache:
+    resolved_segment_length, resolved_n_fft = _resolve_spectral_settings(
+        x_trials,
+        segment_length=segment_length,
+        n_fft=n_fft,
+    )
+    n_trials = len(x_trials)
+    n_inputs = x_trials[0].shape[1]
+    n_outputs = y_trials[0].shape[1]
+    n_frequencies = resolved_n_fft // 2 + 1
+
+    trial_cxx = np.zeros((n_trials, n_frequencies, n_inputs, n_inputs), dtype=np.complex128)
+    trial_cxy = np.zeros((n_trials, n_frequencies, n_inputs, n_outputs), dtype=np.complex128)
+
+    window_cache: dict[int, np.ndarray] = {}
+    for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials)):
+        segments = list(
+            _iter_segments(
+                x_trial,
+                y_trial,
+                segment_length=resolved_segment_length,
+                overlap=overlap,
+            )
+        )
+        segment_weight = 1.0 / len(segments)
+        for x_segment, y_segment in segments:
+            x_prepared = _prepare_segment(
+                x_segment,
+                target_length=resolved_segment_length,
+                window_cache=window_cache,
+                window=window,
+                detrend=detrend,
+            )
+            y_prepared = _prepare_segment(
+                y_segment,
+                target_length=resolved_segment_length,
+                window_cache=window_cache,
+                window=window,
+                detrend=detrend,
+            )
+
+            x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
+            y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
+
+            trial_cxx[trial_index] += segment_weight * np.einsum(
+                "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
+            )
+            trial_cxy[trial_index] += segment_weight * np.einsum(
+                "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
+            )
+
+    return _SpectralCache(
+        trial_cxx=trial_cxx,
+        trial_cxy=trial_cxy,
+        segment_length=resolved_segment_length,
+        n_fft=resolved_n_fft,
+        overlap=overlap,
+        window=_copy_value(window),
+        detrend=detrend,
+    )
+
+
+def _aggregate_cached_spectra(
+    spectral_cache: _SpectralCache,
+    *,
+    trial_indices: np.ndarray | None = None,
+    raw_trial_weights: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if trial_indices is None:
+        trial_indices = np.arange(spectral_cache.trial_cxx.shape[0], dtype=int)
+    else:
+        trial_indices = np.asarray(trial_indices, dtype=int)
+    if raw_trial_weights is None:
+        normalized_weights = np.full(trial_indices.shape[0], 1.0 / trial_indices.shape[0], dtype=float)
+    else:
+        normalized_weights = _normalize_weight_vector(raw_trial_weights[trial_indices])
+
+    cxx = np.tensordot(
+        normalized_weights,
+        spectral_cache.trial_cxx[trial_indices],
+        axes=(0, 0),
+    )
+    cxy = np.tensordot(
+        normalized_weights,
+        spectral_cache.trial_cxy[trial_indices],
+        axes=(0, 0),
+    )
+    return cxx, cxy
+
+
+def _solve_transfer_function(
+    cxx: np.ndarray,
+    cxy: np.ndarray,
+    *,
+    regularization: float,
+) -> np.ndarray:
+    eye = np.eye(cxx.shape[1], dtype=np.complex128)
+    transfer_function = np.zeros_like(cxy)
+    for frequency_index in range(cxx.shape[0]):
+        system = cxx[frequency_index] + regularization * eye
+        transfer_function[frequency_index] = np.linalg.solve(system, cxy[frequency_index])
+    return transfer_function
+
+
+def _extract_impulse_response(
+    transfer_function: np.ndarray,
+    *,
+    fs: float,
+    n_fft: int,
+    tmin: float,
+    tmax: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    lag_start = int(round(float(tmin) * fs))
+    lag_stop = int(round(float(tmax) * fs))
+    if lag_stop <= lag_start:
+        raise ValueError("tmax must be greater than tmin.")
+    if lag_stop - lag_start > n_fft:
+        raise ValueError("Requested lag window is longer than n_fft.")
+
+    full_kernel = np.fft.irfft(transfer_function, n=n_fft, axis=0).real
+    lag_indices = np.arange(lag_start, lag_stop, dtype=int)
+    kernel = full_kernel[np.mod(lag_indices, n_fft), :, :]
+    times = lag_indices / fs
+    return np.transpose(kernel, (1, 0, 2)), times
+
+
+def _slice_interval(
+    interval: np.ndarray,
+    times: np.ndarray,
+    *,
+    tmin: float | None,
+    tmax: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if tmin is None and tmax is None:
+        return interval.copy(), times.copy()
+    tmin = times[0] if tmin is None else tmin
+    if tmax is None:
+        step = (times[1] - times[0]) if times.size > 1 else 1.0
+        tmax = times[-1] + step
+    mask = (times >= tmin) & (times < tmax)
+    if not np.any(mask):
+        raise ValueError("Requested lag window does not overlap the stored interval.")
+    return interval[:, :, mask, :].copy(), times[mask].copy()
+
+
+def _validate_confidence_level(level: float, *, name: str) -> None:
+    if not 0.0 < float(level) < 1.0:
+        raise ValueError(f"{name} must lie strictly between 0 and 1.")
+
+
+def _compute_bootstrap_interval_from_cache(
+    spectral_cache: _SpectralCache,
+    *,
+    fs: float,
+    tmin: float,
+    tmax: float,
+    regularization: float,
+    raw_trial_weights: np.ndarray,
+    n_bootstraps: int,
+    level: float,
+    seed: int | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    if n_bootstraps <= 0:
+        raise ValueError("n_bootstraps must be positive.")
+    _validate_confidence_level(level, name="level")
+    if spectral_cache.trial_cxx.shape[0] < 2:
+        raise ValueError("Bootstrap confidence intervals require at least two trials.")
+
+    rng = np.random.default_rng(seed)
+    n_trials = spectral_cache.trial_cxx.shape[0]
+    kernels = np.zeros(
+        (
+            n_bootstraps,
+            spectral_cache.trial_cxy.shape[2],
+            int(round((tmax - tmin) * fs)),
+            spectral_cache.trial_cxy.shape[3],
+        ),
+        dtype=float,
+    )
+
+    for bootstrap_index in range(n_bootstraps):
+        sampled_indices = rng.integers(0, n_trials, size=n_trials)
+        sampled_weights = np.bincount(sampled_indices, minlength=n_trials).astype(float)
+        sampled_weights *= raw_trial_weights
+        cxx, cxy = _aggregate_cached_spectra(
+            spectral_cache,
+            raw_trial_weights=sampled_weights,
+        )
+        transfer_function = _solve_transfer_function(
+            cxx,
+            cxy,
+            regularization=regularization,
+        )
+        kernels[bootstrap_index], times = _extract_impulse_response(
+            transfer_function,
+            fs=fs,
+            n_fft=spectral_cache.n_fft,
+            tmin=tmin,
+            tmax=tmax,
+        )
+
+    alpha = (1.0 - level) / 2.0
+    interval = np.quantile(kernels, [alpha, 1.0 - alpha], axis=0)
+    return interval, times
+
+
 def _shifted_convolution(
     signal_in: np.ndarray,
     kernel: np.ndarray,
@@ -237,12 +503,15 @@ class FrequencyTRF:
     - call :meth:`predict` to generate predicted responses or stimuli
     - call :meth:`score` to evaluate predictions
     - call :meth:`plot` to visualize the fitted kernel
+    - call :meth:`plot_grid` to visualize all input/output kernels at once
     - inspect :attr:`weights` and :attr:`times` as the time-domain kernel
 
     Unlike a classic time-domain TRF, the fit is performed through
     ridge-regularized spectral deconvolution. This is often attractive for
     high-rate continuous data where explicitly building large lag matrices is
-    cumbersome.
+    cumbersome. When multiple regularization values are supplied, the estimator
+    caches per-trial spectral statistics so cross-validation can reuse them
+    instead of recomputing FFTs for every fold and candidate value.
 
     Parameters
     ----------
@@ -272,6 +541,11 @@ class FrequencyTRF:
         Selected ridge parameter.
     fs:
         Sampling rate used during fitting.
+    bootstrap_interval:
+        Optional trial-bootstrap confidence interval with shape
+        ``(2, n_inputs, n_lags, n_outputs)``.
+    bootstrap_level:
+        Confidence level used for :attr:`bootstrap_interval`.
 
     Examples
     --------
@@ -311,6 +585,10 @@ class FrequencyTRF:
         self.detrend: None | str = None
         self.tmin: float | None = None
         self.tmax: float | None = None
+        self.trial_weights: None | str | np.ndarray = None
+        self.bootstrap_interval: np.ndarray | None = None
+        self.bootstrap_level: float | None = None
+        self.bootstrap_samples: int | None = None
 
     def train(
         self,
@@ -330,6 +608,9 @@ class FrequencyTRF:
         average: bool | Sequence[int] = True,
         seed: int | None = None,
         trial_weights: None | str | Sequence[float] = None,
+        bootstrap_samples: int = 0,
+        bootstrap_level: float = 0.95,
+        bootstrap_seed: int | None = None,
     ) -> np.ndarray | float | None:
         """
         Fit the frequency-domain TRF.
@@ -385,6 +666,13 @@ class FrequencyTRF:
             Optional trial weights. Use ``"inverse_variance"`` for
             inverse-variance weighting or pass an explicit vector with one
             weight per training trial.
+        bootstrap_samples:
+            Number of trial-bootstrap resamples used to estimate a confidence
+            interval for the fitted kernel. ``0`` disables the bootstrap.
+        bootstrap_level:
+            Confidence level used for the stored bootstrap interval.
+        bootstrap_seed:
+            Optional random seed used for bootstrap resampling.
 
         Returns
         -------
@@ -397,7 +685,9 @@ class FrequencyTRF:
         -----
         The fitted model is always stored on the instance, even when
         cross-validation is used. In that case the final fit uses the selected
-        regularization value and all provided trials.
+        regularization value and all provided trials. When multiple
+        regularization values are supplied, the per-trial spectra are cached so
+        the FFT work is performed only once.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -407,23 +697,69 @@ class FrequencyTRF:
         x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
         self._validate_dimensions(x_trials, y_trials)
         self._validate_fit_arguments(fs, tmin, tmax, segment_length, overlap, n_fft, detrend)
+        if int(bootstrap_samples) < 0:
+            raise ValueError("bootstrap_samples must be non-negative.")
+        _validate_confidence_level(bootstrap_level, name="bootstrap_level")
 
         regularization_values = np.atleast_1d(np.asarray(regularization, dtype=float))
-        if regularization_values.size == 1:
-            self._fit(
+        raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
+        self.trial_weights = _copy_value(trial_weights)
+        self.bootstrap_interval = None
+        self.bootstrap_level = None
+        self.bootstrap_samples = None
+
+        needs_cache = regularization_values.size > 1 or int(bootstrap_samples) > 0
+        spectral_cache = None
+        if needs_cache:
+            spectral_cache = _build_spectral_cache(
                 x_trials,
                 y_trials,
-                fs=fs,
-                tmin=tmin,
-                tmax=tmax,
-                regularization=float(regularization_values[0]),
                 segment_length=segment_length,
                 overlap=overlap,
                 n_fft=n_fft,
                 window=window,
                 detrend=detrend,
-                trial_weights=trial_weights,
             )
+
+        if regularization_values.size == 1:
+            if spectral_cache is None:
+                self._fit(
+                    x_trials,
+                    y_trials,
+                    fs=fs,
+                    tmin=tmin,
+                    tmax=tmax,
+                    regularization=float(regularization_values[0]),
+                    segment_length=segment_length,
+                    overlap=overlap,
+                    n_fft=n_fft,
+                    window=window,
+                    detrend=detrend,
+                    trial_weights=trial_weights,
+                )
+            else:
+                self._fit_from_cache(
+                    spectral_cache,
+                    fs=fs,
+                    tmin=tmin,
+                    tmax=tmax,
+                    regularization=float(regularization_values[0]),
+                    raw_trial_weights=raw_trial_weights,
+                )
+                if bootstrap_samples > 0:
+                    self.bootstrap_interval, _ = _compute_bootstrap_interval_from_cache(
+                        spectral_cache,
+                        fs=fs,
+                        tmin=tmin,
+                        tmax=tmax,
+                        regularization=float(regularization_values[0]),
+                        raw_trial_weights=raw_trial_weights,
+                        n_bootstraps=int(bootstrap_samples),
+                        level=float(bootstrap_level),
+                        seed=bootstrap_seed,
+                    )
+                    self.bootstrap_level = float(bootstrap_level)
+                    self.bootstrap_samples = int(bootstrap_samples)
             return None
 
         cv_scores = self._cross_validate(
@@ -441,7 +777,8 @@ class FrequencyTRF:
             k=k,
             seed=seed,
             average=average,
-            trial_weights=trial_weights,
+            raw_trial_weights=raw_trial_weights,
+            spectral_cache=spectral_cache,
         )
 
         if cv_scores.ndim == 1:
@@ -449,20 +786,29 @@ class FrequencyTRF:
         else:
             best_index = int(np.argmax(cv_scores.mean(axis=1)))
 
-        self._fit(
-            x_trials,
-            y_trials,
+        assert spectral_cache is not None
+        self._fit_from_cache(
+            spectral_cache,
             fs=fs,
             tmin=tmin,
             tmax=tmax,
             regularization=float(regularization_values[best_index]),
-            segment_length=segment_length,
-            overlap=overlap,
-            n_fft=n_fft,
-            window=window,
-            detrend=detrend,
-            trial_weights=trial_weights,
+            raw_trial_weights=raw_trial_weights,
         )
+        if bootstrap_samples > 0:
+            self.bootstrap_interval, _ = _compute_bootstrap_interval_from_cache(
+                spectral_cache,
+                fs=fs,
+                tmin=tmin,
+                tmax=tmax,
+                regularization=float(regularization_values[best_index]),
+                raw_trial_weights=raw_trial_weights,
+                n_bootstraps=int(bootstrap_samples),
+                level=float(bootstrap_level),
+                seed=bootstrap_seed,
+            )
+            self.bootstrap_level = float(bootstrap_level)
+            self.bootstrap_samples = int(bootstrap_samples)
         return cv_scores
 
     def _fit(
@@ -481,85 +827,66 @@ class FrequencyTRF:
         detrend: None | str,
         trial_weights: None | str | Sequence[float],
     ) -> None:
-        resolved_segment_length = (
-            max(trial.shape[0] for trial in x_trials)
-            if segment_length is None
-            else int(segment_length)
+        spectral_cache = _build_spectral_cache(
+            x_trials,
+            y_trials,
+            segment_length=segment_length,
+            overlap=overlap,
+            n_fft=n_fft,
+            window=window,
+            detrend=detrend,
         )
-        resolved_n_fft = (
-            next_fast_len(resolved_segment_length)
-            if n_fft is None
-            else int(n_fft)
+        self._fit_from_cache(
+            spectral_cache,
+            fs=fs,
+            tmin=tmin,
+            tmax=tmax,
+            regularization=regularization,
+            raw_trial_weights=_resolve_raw_trial_weights(y_trials, trial_weights),
         )
-        if resolved_n_fft < resolved_segment_length:
-            raise ValueError("n_fft must be at least as large as segment_length.")
+        self.window = _copy_value(window)
+        self.detrend = detrend
 
-        trial_weight_values = _normalize_trial_weights(y_trials, trial_weights)
-        n_inputs = x_trials[0].shape[1]
-        n_outputs = y_trials[0].shape[1]
-        n_frequencies = resolved_n_fft // 2 + 1
-
-        cxx = np.zeros((n_frequencies, n_inputs, n_inputs), dtype=np.complex128)
-        cxy = np.zeros((n_frequencies, n_inputs, n_outputs), dtype=np.complex128)
-
-        window_cache: dict[int, np.ndarray] = {}
-        for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials)):
-            segments = list(
-                _iter_segments(
-                    x_trial,
-                    y_trial,
-                    segment_length=resolved_segment_length,
-                    overlap=overlap,
-                )
-            )
-            segment_weight = trial_weight_values[trial_index] / len(segments)
-            for x_segment, y_segment in segments:
-                x_prepared = _prepare_segment(
-                    x_segment,
-                    target_length=resolved_segment_length,
-                    window_cache=window_cache,
-                    window=window,
-                    detrend=detrend,
-                )
-                y_prepared = _prepare_segment(
-                    y_segment,
-                    target_length=resolved_segment_length,
-                    window_cache=window_cache,
-                    window=window,
-                    detrend=detrend,
-                )
-
-                x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
-                y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
-
-                cxx += segment_weight * np.einsum(
-                    "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
-                )
-                cxy += segment_weight * np.einsum(
-                    "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
-                )
-
-        eye = np.eye(n_inputs, dtype=np.complex128)
-        transfer_function = np.zeros_like(cxy)
-        for frequency_index in range(n_frequencies):
-            system = cxx[frequency_index] + regularization * eye
-            transfer_function[frequency_index] = np.linalg.solve(
-                system,
-                cxy[frequency_index],
-            )
+    def _fit_from_cache(
+        self,
+        spectral_cache: _SpectralCache,
+        *,
+        fs: float,
+        tmin: float,
+        tmax: float,
+        regularization: float,
+        raw_trial_weights: np.ndarray | None,
+        trial_indices: np.ndarray | None = None,
+    ) -> None:
+        cxx, cxy = _aggregate_cached_spectra(
+            spectral_cache,
+            trial_indices=trial_indices,
+            raw_trial_weights=raw_trial_weights,
+        )
+        transfer_function = _solve_transfer_function(
+            cxx,
+            cxy,
+            regularization=float(regularization),
+        )
 
         self.transfer_function = transfer_function
-        self.frequencies = np.fft.rfftfreq(resolved_n_fft, d=1.0 / float(fs))
+        self.frequencies = np.fft.rfftfreq(spectral_cache.n_fft, d=1.0 / float(fs))
         self.fs = float(fs)
         self.regularization = float(regularization)
-        self.segment_length = resolved_segment_length
-        self.n_fft = resolved_n_fft
-        self.overlap = overlap
-        self.window = window
-        self.detrend = detrend
+        self.segment_length = spectral_cache.segment_length
+        self.n_fft = spectral_cache.n_fft
+        self.overlap = spectral_cache.overlap
+        self.window = _copy_value(spectral_cache.window)
+        self.detrend = spectral_cache.detrend
         self.tmin = float(tmin)
         self.tmax = float(tmax)
-        self.weights, self.times = self.to_impulse_response(tmin=tmin, tmax=tmax)
+        self.weights, self.times = _extract_impulse_response(
+            self.transfer_function,
+            fs=float(fs),
+            n_fft=spectral_cache.n_fft,
+            tmin=float(tmin),
+            tmax=float(tmax),
+        )
 
     def to_impulse_response(
         self,
@@ -594,18 +921,13 @@ class FrequencyTRF:
         if tmin is None or tmax is None:
             raise ValueError("tmin and tmax must be defined.")
 
-        lag_start = int(round(float(tmin) * self.fs))
-        lag_stop = int(round(float(tmax) * self.fs))
-        if lag_stop <= lag_start:
-            raise ValueError("tmax must be greater than tmin.")
-        if lag_stop - lag_start > self.n_fft:
-            raise ValueError("Requested lag window is longer than n_fft.")
-
-        full_kernel = np.fft.irfft(self.transfer_function, n=self.n_fft, axis=0).real
-        lag_indices = np.arange(lag_start, lag_stop, dtype=int)
-        kernel = full_kernel[np.mod(lag_indices, self.n_fft), :, :]
-        times = lag_indices / self.fs
-        return np.transpose(kernel, (1, 0, 2)), times
+        return _extract_impulse_response(
+            self.transfer_function,
+            fs=float(self.fs),
+            n_fft=int(self.n_fft),
+            tmin=float(tmin),
+            tmax=float(tmax),
+        )
 
     def plot(
         self,
@@ -618,6 +940,9 @@ class FrequencyTRF:
         time_unit: str = "ms",
         color: str | None = None,
         linewidth: float = 2.0,
+        show_bootstrap_interval: bool = False,
+        interval_color: str | None = None,
+        interval_alpha: float = 0.2,
         title: str | None = None,
         label: str | None = None,
     ):
@@ -636,6 +961,10 @@ class FrequencyTRF:
             Either ``"ms"`` or ``"s"`` for the x-axis.
         color, linewidth, title, label:
             Standard matplotlib styling arguments for the kernel line.
+        show_bootstrap_interval:
+            If ``True``, plot the stored bootstrap confidence interval.
+        interval_color, interval_alpha:
+            Styling for the bootstrap interval shading.
 
         Returns
         -------
@@ -649,18 +978,142 @@ class FrequencyTRF:
         from .plotting import plot_kernel
 
         weights, times = self.to_impulse_response(tmin=tmin, tmax=tmax)
+        bootstrap_interval = None
+        if show_bootstrap_interval:
+            bootstrap_interval, _ = self.bootstrap_interval_at(tmin=tmin, tmax=tmax)
         return plot_kernel(
             weights=weights,
             times=times,
+            credible_interval=bootstrap_interval,
             input_index=input_index,
             output_index=output_index,
             ax=ax,
             time_unit=time_unit,
             color=color,
+            interval_color=interval_color,
             linewidth=linewidth,
+            interval_alpha=interval_alpha,
             title=title,
             label=label,
         )
+
+    def plot_grid(
+        self,
+        *,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        ax=None,
+        time_unit: str = "ms",
+        color: str | None = None,
+        linewidth: float = 1.8,
+        show_bootstrap_interval: bool = False,
+        interval_color: str | None = None,
+        interval_alpha: float = 0.2,
+        input_labels: Sequence[str] | None = None,
+        output_labels: Sequence[str] | None = None,
+        title: str | None = None,
+        sharey: bool = False,
+    ):
+        """Plot every input/output kernel in a grid.
+
+        This is convenient for multifeature or multichannel models where
+        calling :meth:`plot` repeatedly would be cumbersome.
+        """
+
+        if self.weights is None or self.times is None:
+            raise ValueError("Model must be trained before plotting.")
+
+        from .plotting import plot_kernel_grid
+
+        weights, times = self.to_impulse_response(tmin=tmin, tmax=tmax)
+        bootstrap_interval = None
+        if show_bootstrap_interval:
+            bootstrap_interval, _ = self.bootstrap_interval_at(tmin=tmin, tmax=tmax)
+        return plot_kernel_grid(
+            weights=weights,
+            times=times,
+            credible_interval=bootstrap_interval,
+            ax=ax,
+            time_unit=time_unit,
+            color=color,
+            interval_color=interval_color,
+            linewidth=linewidth,
+            interval_alpha=interval_alpha,
+            title=title,
+            input_labels=input_labels,
+            output_labels=output_labels,
+            sharey=sharey,
+        )
+
+    def bootstrap_interval_at(
+        self,
+        *,
+        tmin: float | None = None,
+        tmax: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return the stored bootstrap interval over the requested lag window."""
+
+        if self.bootstrap_interval is None or self.times is None:
+            raise ValueError("No bootstrap interval is stored on this model.")
+        return _slice_interval(
+            self.bootstrap_interval,
+            self.times,
+            tmin=tmin,
+            tmax=tmax,
+        )
+
+    def bootstrap_confidence_interval(
+        self,
+        stimulus: np.ndarray | Sequence[np.ndarray],
+        response: np.ndarray | Sequence[np.ndarray],
+        *,
+        n_bootstraps: int = 200,
+        level: float = 0.95,
+        seed: int | None = None,
+        trial_weights: None | str | Sequence[float] | object = _USE_STORED_TRIAL_WEIGHTS,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Estimate and store a trial-bootstrap confidence interval.
+
+        The estimator must already be fitted. By default the method reuses the
+        same fit settings and the same trial-weighting strategy as the model.
+        Bootstrap resampling is performed over trials, so at least two trials
+        are required.
+        """
+
+        if self.regularization is None or self.fs is None or self.tmin is None or self.tmax is None:
+            raise ValueError("Model must be trained before bootstrapping.")
+
+        stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
+        response_trials, _ = _coerce_trials(response, "response")
+        _check_trial_lengths(stimulus_trials, response_trials)
+        x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
+        self._validate_dimensions(x_trials, y_trials)
+
+        resolved_trial_weights = self.trial_weights if trial_weights is _USE_STORED_TRIAL_WEIGHTS else trial_weights
+        spectral_cache = _build_spectral_cache(
+            x_trials,
+            y_trials,
+            segment_length=self.segment_length,
+            overlap=float(self.overlap),
+            n_fft=self.n_fft,
+            window=self.window,
+            detrend=self.detrend,
+        )
+        interval, times = _compute_bootstrap_interval_from_cache(
+            spectral_cache,
+            fs=float(self.fs),
+            tmin=float(self.tmin),
+            tmax=float(self.tmax),
+            regularization=float(self.regularization),
+            raw_trial_weights=_resolve_raw_trial_weights(y_trials, resolved_trial_weights),
+            n_bootstraps=int(n_bootstraps),
+            level=float(level),
+            seed=seed,
+        )
+        self.bootstrap_interval = interval
+        self.bootstrap_level = float(level)
+        self.bootstrap_samples = int(n_bootstraps)
+        return interval, times
 
     def predict(
         self,
@@ -808,7 +1261,8 @@ class FrequencyTRF:
         k: int,
         seed: int | None,
         average: bool | Sequence[int],
-        trial_weights: None | str | Sequence[float],
+        raw_trial_weights: np.ndarray,
+        spectral_cache: _SpectralCache | None,
     ) -> np.ndarray:
         n_trials = len(x_trials)
         if n_trials < 2:
@@ -829,32 +1283,29 @@ class FrequencyTRF:
             (len(regularization_values), len(folds), y_trials[0].shape[1]),
             dtype=float,
         )
-        explicit_weights = None
-        if trial_weights is not None and not isinstance(trial_weights, str):
-            explicit_weights = np.asarray(trial_weights, dtype=float)
+        if spectral_cache is None:
+            spectral_cache = _build_spectral_cache(
+                x_trials,
+                y_trials,
+                segment_length=segment_length,
+                overlap=overlap,
+                n_fft=n_fft,
+                window=window,
+                detrend=detrend,
+            )
 
         for reg_index, reg_value in enumerate(regularization_values):
             for fold_index, val_idx in enumerate(folds):
                 train_idx = np.setdiff1d(indices, val_idx, assume_unique=True)
                 candidate = FrequencyTRF(direction=self.direction, metric=self.metric)
-
-                fold_trial_weights = trial_weights
-                if explicit_weights is not None:
-                    fold_trial_weights = explicit_weights[train_idx]
-
-                candidate._fit(
-                    [x_trials[i] for i in train_idx],
-                    [y_trials[i] for i in train_idx],
+                candidate._fit_from_cache(
+                    spectral_cache,
                     fs=fs,
                     tmin=tmin,
                     tmax=tmax,
                     regularization=float(reg_value),
-                    segment_length=segment_length,
-                    overlap=overlap,
-                    n_fft=n_fft,
-                    window=window,
-                    detrend=detrend,
-                    trial_weights=fold_trial_weights,
+                    raw_trial_weights=raw_trial_weights,
+                    trial_indices=train_idx,
                 )
                 per_reg_scores[reg_index, fold_index, :] = candidate.score(
                     stimulus=[x_trials[i] for i in val_idx] if self.direction == 1 else [y_trials[i] for i in val_idx],

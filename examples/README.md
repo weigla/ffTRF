@@ -29,6 +29,12 @@ practical with `FrequencyTRF`:
   Multiple stimulus features, multiple response channels, forward model.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
+- `example_bootstrap_confidence_interval.py`
+  Forward model with a stored bootstrap confidence interval.
+- `example_trial_weighting.py`
+  Compare an unweighted fit to a fit that uses inverse-variance trial weights.
+- `example_save_and_load.py`
+  Save a fitted model, load it again, and export a different lag window.
 
 Each example is intentionally a plain Python script showing the API calls,
 learned attributes, and one corresponding figure. Running a script prints the
@@ -41,6 +47,9 @@ python examples/example_single_trial_single_channel.py
 python examples/example_multi_trial_single_channel.py
 python examples/example_multifeature_multichannel.py
 python examples/example_backward_decoding.py
+python examples/example_bootstrap_confidence_interval.py
+python examples/example_trial_weighting.py
+python examples/example_save_and_load.py
 ```
 
 Run the comparison demo with Pixi:
