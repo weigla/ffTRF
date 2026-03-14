@@ -1,6 +1,6 @@
-"""Optional comparison helpers for validating fft_trf against reference fits.
+"""Optional comparison helpers for validating ffTRF against reference fits.
 
-This module intentionally lives outside the installable `fft_trf` package so the
+This module intentionally lives outside the installable `fftrf` package so the
 core toolbox stays focused on model fitting and preprocessing. The functions
 here are for examples, sanity checks, and development-time comparisons only.
 """
@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from fft_trf import FrequencyTRF
+from fftrf import FrequencyTRF
 
 
 @dataclass(slots=True)
@@ -26,11 +26,17 @@ class KernelComparisonResult:
     regularization: float
     times: np.ndarray
     true_kernel: np.ndarray
-    fft_trf_kernel: np.ndarray
+    fftrf_kernel: np.ndarray
     time_domain_kernel: np.ndarray
     mtrf_kernel: np.ndarray | None
     metrics: dict[str, float]
     model: FrequencyTRF
+
+    @property
+    def fft_trf_kernel(self) -> np.ndarray:
+        """Compatibility alias for the old kernel attribute name."""
+
+        return self.fftrf_kernel
 
 
 def default_kernel(
@@ -197,7 +203,7 @@ def compare_simulated_kernels(
         regularization=regularization,
         times=times,
         true_kernel=true_kernel,
-        fft_trf_kernel=fft_kernel,
+        fftrf_kernel=fft_kernel,
         time_domain_kernel=time_kernel,
         mtrf_kernel=mtrf_kernel,
         metrics=metrics,
@@ -253,7 +259,7 @@ def plot_kernel_comparison(
     times_ms = result.times * 1e3
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(times_ms, result.true_kernel, label="True kernel", linewidth=2.5, color="#111111")
-    ax.plot(times_ms, result.fft_trf_kernel, label="fft_trf", linewidth=2.0, color="#0B6E4F")
+    ax.plot(times_ms, result.fftrf_kernel, label="ffTRF", linewidth=2.0, color="#0B6E4F")
     ax.plot(
         times_ms,
         result.time_domain_kernel,

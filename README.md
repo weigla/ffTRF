@@ -1,6 +1,6 @@
-# fft-trf
+# ffTRF
 
-`fft-trf` is a small Python toolbox for fitting temporal response functions
+`ffTRF` is a small Python toolbox for fitting temporal response functions
 (TRFs) in the frequency domain. It is designed as a general continuous
 stimulus-response modeling library rather than a toolbox tied to one modality or
 one experimental paradigm.
@@ -21,6 +21,9 @@ estimator:
 The public workflow is intentionally close to `mTRFpy`: call `train(...)`,
 inspect `weights` and `times`, then call `predict(...)`, `score(...)`, or
 `plot(...)`.
+
+The primary Python import is now `fftrf`. The older `fft_trf` import path is
+still available as a compatibility alias.
 
 ## Installation
 
@@ -58,7 +61,7 @@ That provides:
 ```python
 import numpy as np
 
-from fft_trf import FrequencyTRF, inverse_variance_weights
+from fftrf import FrequencyTRF, inverse_variance_weights
 
 rng = np.random.default_rng(0)
 fs = 1_000
@@ -320,7 +323,7 @@ Important methods:
 
 ## Optional Comparison Tools
 
-The installable toolbox lives under `src/fft_trf/`. Optional validation and
+The installable toolbox lives under `src/fftrf/`. Optional validation and
 benchmarking utilities live under `examples/` so the main package stays focused
 on core fitting functionality.
 

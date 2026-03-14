@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fft_trf import FrequencyTRF, inverse_variance_weights
+from fftrf import FrequencyTRF, inverse_variance_weights
 
 from simulated_data import (
     build_multi_trial_single_channel_dataset,

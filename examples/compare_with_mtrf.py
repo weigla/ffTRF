@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare fft_trf kernels against time-domain ridge and mTRFpy.
+"""Compare ffTRF kernels against time-domain ridge and mTRFpy.
 
 Examples
 --------
@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Generate simulated data, fit fft_trf and time-domain references, "
+            "Generate simulated data, fit ffTRF and time-domain references, "
             "and plot the recovered kernels."
         )
     )
@@ -54,14 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--segment-length",
         type=parse_optional_int,
         default=None,
-        help="Optional segment length for fft_trf spectral estimation, or 'none'.",
+        help="Optional segment length for ffTRF spectral estimation, or 'none'.",
     )
     parser.add_argument("--overlap", type=float, default=0.0, help="Segment overlap fraction.")
     parser.add_argument(
         "--window",
         choices=["none", "hann"],
         default="none",
-        help="Window for fft_trf segments.",
+        help="Window for ffTRF segments.",
     )
     parser.add_argument(
         "--skip-mtrf",
@@ -108,7 +108,7 @@ def main() -> None:
     for key, value in result.metrics.items():
         print(f"  {key}: {value:.4f}")
     if result.mtrf_kernel is None and not args.skip_mtrf:
-        print("  mTRFpy was not available; only fft_trf and time-domain ridge were compared.")
+        print("  mTRFpy was not available; only ffTRF and time-domain ridge were compared.")
 
     plot_kernel_comparison(
         result,

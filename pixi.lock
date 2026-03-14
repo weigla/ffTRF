@@ -1095,9 +1095,9 @@ packages:
   size: 70943
   timestamp: 1765193243911
 - pypi: .
-  name: fft-trf
+  name: fftrf
   version: 0.1.0
-  sha256: 6354f7c605290657e3642a050fbade92f1f7a6a47d7202442419cfbc24b19ba3
+  sha256: c9d52f6a837e20afa38b5bbaf9b810447f615c908ee9ffafa3139d7cc28dbda1
   requires_dist:
   - numpy>=1.26
   - scipy>=1.12

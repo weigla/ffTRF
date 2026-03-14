@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fft_trf import FrequencyTRF
+from fftrf import FrequencyTRF
 
 from simulated_data import (
     build_multifeature_multichannel_dataset,

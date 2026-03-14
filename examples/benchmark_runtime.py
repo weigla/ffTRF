@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Benchmark ``FrequencyTRF`` against a standard time-domain ``mTRFpy`` fit.
+"""Benchmark ``FrequencyTRF`` from ``ffTRF`` against a time-domain ``mTRFpy`` fit.
 
 The benchmark is intentionally simple and reproducible:
 
 - simulate continuous stimulus/response pairs from a known kernel
-- fit ``fft_trf.FrequencyTRF`` with a fixed ridge value
+- fit ``fftrf.FrequencyTRF`` with a fixed ridge value
 - fit ``mTRFpy`` with the same lag window and regularization
 - report median training time and per-fit peak memory across repeated runs
 
@@ -29,7 +29,7 @@ from typing import Sequence
 
 import numpy as np
 
-from fft_trf import FrequencyTRF
+from fftrf import FrequencyTRF
 
 EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(EXAMPLES_DIR) not in sys.path:

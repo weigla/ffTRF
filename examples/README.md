@@ -1,11 +1,11 @@
 # Examples
 
 This directory contains optional demo, comparison, and benchmarking code that
-is not part of the core `fft_trf` library API.
+is not part of the core `ffTRF` library API.
 
 The main installable toolbox lives in:
 
-- `src/fft_trf/`
+- `src/fftrf/`
 
 The files here are intended for:
 

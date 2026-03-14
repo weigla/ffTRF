@@ -4,11 +4,11 @@ import importlib.util
 from pathlib import Path
 import sys
 
-import fft_trf.model as model_module
+import fftrf.model as model_module
 import numpy as np
 import pytest
 
-from fft_trf import FrequencyTRF, half_wave_rectify, inverse_variance_weights, resample_signal
+from fftrf import FrequencyTRF, half_wave_rectify, inverse_variance_weights, resample_signal
 
 
 def _simulate_trials(
@@ -300,7 +300,7 @@ def test_optional_comparison_helper_runs_without_mtrf_dependency() -> None:
         include_mtrf=False,
     )
 
-    assert result.true_kernel.shape == result.fft_trf_kernel.shape
+    assert result.true_kernel.shape == result.fftrf_kernel.shape
     assert result.true_kernel.shape == result.time_domain_kernel.shape
     assert result.mtrf_kernel is None
     assert result.metrics["fft_vs_true"] > 0.95
@@ -334,7 +334,7 @@ def test_frequency_trf_plot_if_matplotlib_available() -> None:
         regularization=1e-3,
     )
 
-    fig, ax = model.plot(label="fft_trf")
+    fig, ax = model.plot(label="ffTRF")
     assert ax.get_xlabel() == "Lag (ms)"
     assert ax.get_ylabel() == "Weight"
     plt.close(fig)
