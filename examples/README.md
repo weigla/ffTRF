@@ -29,8 +29,8 @@ practical with `FrequencyTRF`:
   Multiple stimulus features, multiple response channels, forward model.
 - `example_banded_regularization.py`
   Optional banded ridge search over grouped multifeature predictors.
-- `example_multitaper_diagnostics.py`
-  Optional multi-taper fit with `R^2`, transfer-function plots, and coherence diagnostics.
+- `example_multitaper_estimator.py`
+  Optional multi-taper estimation with `R^2`, transfer-function plots, cross spectra, and coherence.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -56,7 +56,7 @@ python examples/example_single_trial_single_channel.py
 python examples/example_multi_trial_single_channel.py
 python examples/example_multifeature_multichannel.py
 python examples/example_banded_regularization.py
-python examples/example_multitaper_diagnostics.py
+python examples/example_multitaper_estimator.py
 python examples/example_backward_decoding.py
 python examples/example_bootstrap_confidence_interval.py
 python examples/example_trial_weighting.py

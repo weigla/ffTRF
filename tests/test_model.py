@@ -285,7 +285,7 @@ def test_frequency_trf_supports_named_metric_and_multitaper() -> None:
     )
 
     model = FrequencyTRF(direction=1, metric="r2")
-    model.train(
+    model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
         fs=fs,
@@ -294,7 +294,6 @@ def test_frequency_trf_supports_named_metric_and_multitaper() -> None:
         regularization=np.logspace(-5, -1, 5),
         segment_length=512,
         overlap=0.5,
-        spectral_method="multitaper",
         time_bandwidth=3.5,
         n_tapers=4,
         k=4,
@@ -325,7 +324,7 @@ def test_frequency_trf_diagnostics_returns_coherence() -> None:
     )
 
     model = FrequencyTRF(direction=1)
-    model.train(
+    model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
         fs=fs,
@@ -334,21 +333,25 @@ def test_frequency_trf_diagnostics_returns_coherence() -> None:
         regularization=1e-3,
         segment_length=512,
         overlap=0.5,
-        spectral_method="multitaper",
         time_bandwidth=3.5,
         n_tapers=4,
     )
 
-    diagnostics = model.diagnostics(
+    diagnostics = model.cross_spectral_diagnostics(
         stimulus=stimulus[-1],
         response=response[-1],
     )
     assert diagnostics.transfer_function.shape == model.transfer_function.shape
     assert diagnostics.predicted_spectrum.shape == (model.frequencies.shape[0], 1)
     assert diagnostics.observed_spectrum.shape == (model.frequencies.shape[0], 1)
+    assert diagnostics.cross_spectrum.shape == (model.frequencies.shape[0], 1)
     assert diagnostics.coherence.shape == (model.frequencies.shape[0], 1)
     assert np.all((diagnostics.coherence >= 0.0) & (diagnostics.coherence <= 1.0))
     assert float(np.mean(diagnostics.coherence[:30, 0])) > 0.7
+    components = model.transfer_function_components_at()
+    assert components.magnitude.shape == model.frequencies.shape
+    assert components.phase.shape == model.frequencies.shape
+    assert components.group_delay.shape == model.frequencies.shape
 
 
 def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
@@ -613,7 +616,7 @@ def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() ->
     )
 
     model = FrequencyTRF(direction=1)
-    model.train(
+    model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
         fs=fs,
@@ -622,20 +625,27 @@ def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() ->
         regularization=1e-3,
         segment_length=512,
         overlap=0.5,
-        spectral_method="multitaper",
         time_bandwidth=3.5,
         n_tapers=4,
     )
 
-    transfer_fig, transfer_axes = model.plot_transfer_function(phase_unit="deg")
-    assert transfer_axes.shape == (2,)
-    assert transfer_axes[1].get_xlabel() == "Frequency (Hz)"
+    transfer_fig, transfer_axes = model.plot_transfer_function(kind="all", phase_unit="deg")
+    assert transfer_axes.shape == (3,)
+    assert transfer_axes[2].get_xlabel() == "Frequency (Hz)"
     plt.close(transfer_fig)
 
-    diagnostics = model.diagnostics(stimulus=stimulus[-1], response=response[-1])
+    diagnostics = model.cross_spectral_diagnostics(stimulus=stimulus[-1], response=response[-1])
     coherence_fig, coherence_ax = model.plot_coherence(diagnostics=diagnostics)
     assert coherence_ax.get_ylabel() == "Coherence"
     plt.close(coherence_fig)
+
+    cross_fig, cross_axes = model.plot_cross_spectrum(
+        diagnostics=diagnostics,
+        phase_unit="deg",
+    )
+    assert cross_axes.shape == (2,)
+    assert cross_axes[1].get_xlabel() == "Frequency (Hz)"
+    plt.close(cross_fig)
 
 
 def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:

@@ -161,11 +161,13 @@ def plot_transfer_function(
     ax: Any = None,
     color: str | None = None,
     phase_color: str | None = None,
+    group_delay_color: str | None = None,
     linewidth: float = 2.0,
     phase_unit: str = "rad",
+    group_delay_unit: str = "ms",
     title: str | None = None,
 ) -> tuple[Any, Any]:
-    """Plot magnitude and/or phase of a complex transfer function."""
+    """Plot magnitude, phase, and/or group delay of a complex transfer function."""
 
     plt = _require_matplotlib()
     frequencies = np.asarray(frequencies, dtype=float)
@@ -175,6 +177,93 @@ def plot_transfer_function(
     if frequencies.shape[0] != transfer_function.shape[0]:
         raise ValueError("frequencies and transfer_function must have matching lengths.")
 
+    resolved_kind = str(kind).strip().lower()
+    if resolved_kind not in {"magnitude", "phase", "group_delay", "both", "all"}:
+        raise ValueError(
+            "kind must be 'magnitude', 'phase', 'group_delay', 'both', or 'all'."
+        )
+
+    if resolved_kind in {"both", "all"}:
+        n_axes = 2 if resolved_kind == "both" else 3
+        if ax is None:
+            fig, axes = plt.subplots(n_axes, 1, figsize=(8, 3.0 * n_axes), sharex=True)
+        else:
+            axes = np.asarray(ax, dtype=object)
+            if axes.shape != (n_axes,):
+                raise ValueError(f"ax must contain {n_axes} axes when kind={resolved_kind!r}.")
+            fig = axes.flat[0].figure
+
+        series_specs = [
+            ("magnitude", axes[0], color, "Magnitude"),
+            ("phase", axes[1], phase_color or color, None),
+        ]
+        if resolved_kind == "all":
+            series_specs.append(("group_delay", axes[2], group_delay_color or color, None))
+
+        for index, (series_kind, axis, series_color, ylabel) in enumerate(series_specs):
+            _plot_complex_frequency_series(
+                axis,
+                frequencies=frequencies,
+                series=transfer_function,
+                kind=series_kind,
+                color=series_color,
+                linewidth=linewidth,
+                phase_unit=phase_unit,
+                group_delay_unit=group_delay_unit,
+                ylabel=ylabel,
+                title=(title if index == 0 else None),
+                default_title=("Transfer function" if index == 0 else None),
+                xlabel=("Frequency (Hz)" if index == len(series_specs) - 1 else ""),
+            )
+        fig.tight_layout()
+        return fig, axes
+
+    fig, axis = _coerce_axes(plt, ax)
+    _plot_complex_frequency_series(
+        axis,
+        frequencies=frequencies,
+        series=transfer_function,
+        kind=resolved_kind,
+        color=(phase_color if resolved_kind == "phase" else group_delay_color if resolved_kind == "group_delay" else color),
+        linewidth=linewidth,
+        phase_unit=phase_unit,
+        group_delay_unit=group_delay_unit,
+        ylabel=None,
+        title=title,
+        default_title=f"Transfer-function {resolved_kind.replace('_', ' ')}",
+        xlabel="Frequency (Hz)",
+    )
+    return fig, axis
+
+
+def plot_cross_spectrum(
+    *,
+    frequencies: np.ndarray,
+    cross_spectrum: np.ndarray,
+    output_index: int = 0,
+    kind: str = "both",
+    ax: Any = None,
+    color: str | None = None,
+    phase_color: str | None = None,
+    linewidth: float = 2.0,
+    phase_unit: str = "rad",
+    title: str | None = None,
+) -> tuple[Any, Any]:
+    """Plot one predicted-vs-observed cross spectrum."""
+
+    plt = _require_matplotlib()
+    frequencies = np.asarray(frequencies, dtype=float)
+    cross_spectrum = np.asarray(cross_spectrum, dtype=np.complex128)
+    if frequencies.ndim != 1:
+        raise ValueError("frequencies must be a 1D array.")
+    if cross_spectrum.ndim != 2:
+        raise ValueError("cross_spectrum must have shape (n_frequencies, n_outputs).")
+    if cross_spectrum.shape[0] != frequencies.shape[0]:
+        raise ValueError("cross_spectrum must match the length of frequencies.")
+    if not 0 <= int(output_index) < cross_spectrum.shape[1]:
+        raise IndexError(f"output_index out of bounds: {output_index}")
+
+    selected = cross_spectrum[:, int(output_index)]
     resolved_kind = str(kind).strip().lower()
     if resolved_kind not in {"magnitude", "phase", "both"}:
         raise ValueError("kind must be 'magnitude', 'phase', or 'both'.")
@@ -187,56 +276,52 @@ def plot_transfer_function(
             if axes.shape != (2,):
                 raise ValueError("ax must contain two axes when kind='both'.")
             fig = axes.flat[0].figure
-        magnitude_ax = axes[0]
-        phase_ax = axes[1]
-        magnitude_ax.plot(
-            frequencies,
-            np.abs(transfer_function),
+        _plot_complex_frequency_series(
+            axes[0],
+            frequencies=frequencies,
+            series=selected,
+            kind="magnitude",
             color=color,
             linewidth=linewidth,
+            phase_unit=phase_unit,
+            group_delay_unit="ms",
+            ylabel="Magnitude",
+            title=title,
+            default_title="Cross spectrum",
+            xlabel="",
         )
-        magnitude_ax.set_ylabel("Magnitude")
-        magnitude_ax.grid(alpha=0.2, linewidth=0.6)
-
-        phase_values, phase_label = _phase_axis(transfer_function, phase_unit=phase_unit)
-        phase_ax.plot(
-            frequencies,
-            phase_values,
+        _plot_complex_frequency_series(
+            axes[1],
+            frequencies=frequencies,
+            series=selected,
+            kind="phase",
             color=phase_color or color,
             linewidth=linewidth,
+            phase_unit=phase_unit,
+            group_delay_unit="ms",
+            ylabel=None,
+            title=None,
+            default_title=None,
+            xlabel="Frequency (Hz)",
         )
-        phase_ax.set_ylabel(phase_label)
-        phase_ax.set_xlabel("Frequency (Hz)")
-        phase_ax.grid(alpha=0.2, linewidth=0.6)
-        if title is not None:
-            magnitude_ax.set_title(title)
-        else:
-            magnitude_ax.set_title("Transfer function")
         fig.tight_layout()
         return fig, axes
 
     fig, axis = _coerce_axes(plt, ax)
-    if resolved_kind == "magnitude":
-        axis.plot(
-            frequencies,
-            np.abs(transfer_function),
-            color=color,
-            linewidth=linewidth,
-        )
-        axis.set_ylabel("Magnitude")
-        axis.set_title(title or "Transfer-function magnitude")
-    else:
-        phase_values, phase_label = _phase_axis(transfer_function, phase_unit=phase_unit)
-        axis.plot(
-            frequencies,
-            phase_values,
-            color=phase_color or color,
-            linewidth=linewidth,
-        )
-        axis.set_ylabel(phase_label)
-        axis.set_title(title or "Transfer-function phase")
-    axis.set_xlabel("Frequency (Hz)")
-    axis.grid(alpha=0.2, linewidth=0.6)
+    _plot_complex_frequency_series(
+        axis,
+        frequencies=frequencies,
+        series=selected,
+        kind=resolved_kind,
+        color=phase_color if resolved_kind == "phase" else color,
+        linewidth=linewidth,
+        phase_unit=phase_unit,
+        group_delay_unit="ms",
+        ylabel=None,
+        title=title,
+        default_title=f"Cross-spectrum {resolved_kind}",
+        xlabel="Frequency (Hz)",
+    )
     return fig, axis
 
 
@@ -392,6 +477,75 @@ def _phase_axis(
     if resolved_unit == "deg":
         return np.rad2deg(phase), "Phase (deg)"
     raise ValueError("phase_unit must be either 'rad' or 'deg'.")
+
+
+def _group_delay_axis(
+    frequencies: np.ndarray,
+    transfer_function: np.ndarray,
+    *,
+    group_delay_unit: str,
+) -> tuple[np.ndarray, str]:
+    resolved_unit = str(group_delay_unit).strip().lower()
+    if frequencies.size <= 1:
+        values = np.zeros_like(frequencies, dtype=float)
+    else:
+        omega = 2.0 * np.pi * frequencies
+        phase = np.unwrap(np.angle(transfer_function))
+        values = -np.gradient(phase, omega, edge_order=1)
+    if resolved_unit == "s":
+        return values, "Group delay (s)"
+    if resolved_unit == "ms":
+        return values * 1e3, "Group delay (ms)"
+    raise ValueError("group_delay_unit must be either 's' or 'ms'.")
+
+
+def _plot_complex_frequency_series(
+    ax: Any,
+    *,
+    frequencies: np.ndarray,
+    series: np.ndarray,
+    kind: str,
+    color: str | None,
+    linewidth: float,
+    phase_unit: str,
+    group_delay_unit: str,
+    ylabel: str | None,
+    title: str | None,
+    default_title: str | None,
+    xlabel: str,
+) -> None:
+    resolved_kind = str(kind).strip().lower()
+    if resolved_kind == "magnitude":
+        values = np.abs(series)
+        axis_label = ylabel or "Magnitude"
+    elif resolved_kind == "phase":
+        values, axis_label = _phase_axis(series, phase_unit=phase_unit)
+        if ylabel is not None:
+            axis_label = ylabel
+    elif resolved_kind == "group_delay":
+        values, axis_label = _group_delay_axis(
+            frequencies,
+            series,
+            group_delay_unit=group_delay_unit,
+        )
+        if ylabel is not None:
+            axis_label = ylabel
+    else:
+        raise ValueError(f"Unsupported complex series kind: {kind!r}")
+
+    ax.plot(
+        frequencies,
+        values,
+        color=color,
+        linewidth=linewidth,
+    )
+    ax.set_ylabel(axis_label)
+    ax.set_xlabel(xlabel)
+    ax.grid(alpha=0.2, linewidth=0.6)
+    if title is not None:
+        ax.set_title(title)
+    elif default_title is not None:
+        ax.set_title(default_title)
 
 
 def _require_matplotlib() -> Any:

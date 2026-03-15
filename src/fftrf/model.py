@@ -165,6 +165,43 @@ def available_metrics() -> tuple[str, ...]:
     return tuple(sorted(_METRIC_REGISTRY))
 
 
+def _resolve_phase_unit(phase_unit: str) -> str:
+    resolved = str(phase_unit).strip().lower()
+    if resolved not in {"rad", "deg"}:
+        raise ValueError("phase_unit must be either 'rad' or 'deg'.")
+    return resolved
+
+
+def _phase_values(
+    transfer_function: np.ndarray,
+    *,
+    phase_unit: str,
+) -> tuple[np.ndarray, str]:
+    resolved_unit = _resolve_phase_unit(phase_unit)
+    phase = np.unwrap(np.angle(np.asarray(transfer_function, dtype=np.complex128)))
+    if resolved_unit == "deg":
+        return np.rad2deg(phase), resolved_unit
+    return phase, resolved_unit
+
+
+def _group_delay_values(
+    frequencies: np.ndarray,
+    transfer_function: np.ndarray,
+) -> np.ndarray:
+    frequencies = np.asarray(frequencies, dtype=float)
+    transfer_function = np.asarray(transfer_function, dtype=np.complex128)
+    if frequencies.ndim != 1 or transfer_function.ndim != 1:
+        raise ValueError("frequencies and transfer_function must both be 1D arrays.")
+    if frequencies.shape[0] != transfer_function.shape[0]:
+        raise ValueError("frequencies and transfer_function must have matching lengths.")
+    if frequencies.size <= 1:
+        return np.zeros_like(frequencies, dtype=float)
+
+    phase = np.unwrap(np.angle(transfer_function))
+    omega = 2.0 * np.pi * frequencies
+    return -np.gradient(phase, omega, edge_order=1)
+
+
 def _ensure_2d(array: np.ndarray, name: str) -> np.ndarray:
     array = np.asarray(array, dtype=float)
     if array.ndim == 1:
@@ -467,6 +504,37 @@ class FrequencyTRFDiagnostics:
     observed_spectrum: np.ndarray
     cross_spectrum: np.ndarray
     coherence: np.ndarray
+
+
+CrossSpectralDiagnostics = FrequencyTRFDiagnostics
+
+
+@dataclass(slots=True)
+class TransferFunctionComponents:
+    """Derived one-pair transfer-function quantities.
+
+    Attributes
+    ----------
+    frequencies:
+        Frequency vector in Hz.
+    transfer_function:
+        Complex transfer-function values for one input/output pair.
+    magnitude:
+        Absolute value of the transfer function.
+    phase:
+        Unwrapped transfer-function phase, reported in the requested units.
+    phase_unit:
+        Unit used for :attr:`phase`, either ``"rad"`` or ``"deg"``.
+    group_delay:
+        Group delay derived from the unwrapped phase, expressed in seconds.
+    """
+
+    frequencies: np.ndarray
+    transfer_function: np.ndarray
+    magnitude: np.ndarray
+    phase: np.ndarray
+    phase_unit: str
+    group_delay: np.ndarray
 
 
 def _resolve_raw_trial_weights(
@@ -934,6 +1002,9 @@ class FrequencyTRF:
     - call :meth:`score` to evaluate predictions
     - call :meth:`plot` to visualize the fitted kernel
     - call :meth:`plot_grid` to visualize all input/output kernels at once
+    - call :meth:`plot_transfer_function` to inspect magnitude, phase, or group delay
+    - call :meth:`cross_spectral_diagnostics`, :meth:`plot_coherence`, and
+      :meth:`plot_cross_spectrum` for spectral prediction diagnostics
     - inspect :attr:`weights` and :attr:`times` as the time-domain kernel
 
     Unlike a classic time-domain TRF, the fit is performed through
@@ -1330,6 +1401,62 @@ class FrequencyTRF:
             self.bootstrap_samples = int(bootstrap_samples)
         return cv_scores
 
+    def train_multitaper(
+        self,
+        stimulus: np.ndarray | Sequence[np.ndarray],
+        response: np.ndarray | Sequence[np.ndarray],
+        fs: float,
+        tmin: float,
+        tmax: float,
+        regularization: float | Sequence[float] | Sequence[Sequence[float]],
+        *,
+        bands: None | Sequence[int] = None,
+        segment_length: int | None = None,
+        overlap: float = 0.0,
+        n_fft: int | None = None,
+        time_bandwidth: float = 3.5,
+        n_tapers: int | None = None,
+        detrend: None | str = "constant",
+        k: int = -1,
+        average: bool | Sequence[int] = True,
+        seed: int | None = None,
+        trial_weights: None | str | Sequence[float] = None,
+        bootstrap_samples: int = 0,
+        bootstrap_level: float = 0.95,
+        bootstrap_seed: int | None = None,
+    ) -> np.ndarray | float | None:
+        """Fit the model with DPSS multi-taper spectral estimation.
+
+        This is a convenience wrapper around :meth:`train` for users who want
+        a named multi-taper estimation path without manually setting
+        ``spectral_method="multitaper"``.
+        """
+
+        return self.train(
+            stimulus=stimulus,
+            response=response,
+            fs=fs,
+            tmin=tmin,
+            tmax=tmax,
+            regularization=regularization,
+            bands=bands,
+            segment_length=segment_length,
+            overlap=overlap,
+            n_fft=n_fft,
+            spectral_method="multitaper",
+            time_bandwidth=time_bandwidth,
+            n_tapers=n_tapers,
+            window=None,
+            detrend=detrend,
+            k=k,
+            average=average,
+            seed=seed,
+            trial_weights=trial_weights,
+            bootstrap_samples=bootstrap_samples,
+            bootstrap_level=bootstrap_level,
+            bootstrap_seed=bootstrap_seed,
+        )
+
     def _fit(
         self,
         x_trials: Sequence[np.ndarray],
@@ -1612,6 +1739,32 @@ class FrequencyTRF:
             self.transfer_function[:, int(input_index), int(output_index)].copy(),
         )
 
+    def transfer_function_components_at(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+        phase_unit: str = "rad",
+    ) -> TransferFunctionComponents:
+        """Return magnitude, phase, and group delay for one transfer function."""
+
+        frequencies, transfer = self.transfer_function_at(
+            input_index=input_index,
+            output_index=output_index,
+        )
+        phase, resolved_phase_unit = _phase_values(
+            transfer,
+            phase_unit=phase_unit,
+        )
+        return TransferFunctionComponents(
+            frequencies=frequencies,
+            transfer_function=transfer,
+            magnitude=np.abs(transfer),
+            phase=phase,
+            phase_unit=resolved_phase_unit,
+            group_delay=_group_delay_values(frequencies, transfer),
+        )
+
     def plot_transfer_function(
         self,
         *,
@@ -1621,31 +1774,36 @@ class FrequencyTRF:
         ax=None,
         color: str | None = None,
         phase_color: str | None = None,
+        group_delay_color: str | None = None,
         linewidth: float = 2.0,
         phase_unit: str = "rad",
+        group_delay_unit: str = "ms",
         title: str | None = None,
     ):
-        """Plot magnitude and phase of one learned transfer function."""
+        """Plot magnitude, phase, and/or group delay of one transfer function."""
 
         from .plotting import plot_transfer_function
 
-        frequencies, transfer = self.transfer_function_at(
+        components = self.transfer_function_components_at(
             input_index=input_index,
             output_index=output_index,
+            phase_unit=phase_unit,
         )
         return plot_transfer_function(
-            frequencies=frequencies,
-            transfer_function=transfer,
+            frequencies=components.frequencies,
+            transfer_function=components.transfer_function,
             kind=kind,
             ax=ax,
             color=color,
             phase_color=phase_color,
+            group_delay_color=group_delay_color,
             linewidth=linewidth,
-            phase_unit=phase_unit,
+            phase_unit=components.phase_unit,
+            group_delay_unit=group_delay_unit,
             title=title,
         )
 
-    def diagnostics(
+    def cross_spectral_diagnostics(
         self,
         *,
         stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
@@ -1654,7 +1812,7 @@ class FrequencyTRF:
         tmax: float | None = None,
         trial_weights: None | str | Sequence[float] | object = _USE_STORED_TRIAL_WEIGHTS,
     ) -> FrequencyTRFDiagnostics:
-        """Compute observed-vs-predicted spectral diagnostics.
+        """Compute observed-vs-predicted cross-spectral diagnostics.
 
         This method reuses the fitted kernel to generate predictions for the
         provided data, then compares predicted and observed targets in the
@@ -1755,6 +1913,25 @@ class FrequencyTRF:
             coherence=coherence,
         )
 
+    def diagnostics(
+        self,
+        *,
+        stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
+        response: np.ndarray | Sequence[np.ndarray] | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        trial_weights: None | str | Sequence[float] | object = _USE_STORED_TRIAL_WEIGHTS,
+    ) -> FrequencyTRFDiagnostics:
+        """Compatibility alias for :meth:`cross_spectral_diagnostics`."""
+
+        return self.cross_spectral_diagnostics(
+            stimulus=stimulus,
+            response=response,
+            tmin=tmin,
+            tmax=tmax,
+            trial_weights=trial_weights,
+        )
+
     def plot_coherence(
         self,
         *,
@@ -1772,7 +1949,7 @@ class FrequencyTRF:
         from .plotting import plot_coherence
 
         if diagnostics is None:
-            diagnostics = self.diagnostics(
+            diagnostics = self.cross_spectral_diagnostics(
                 stimulus=stimulus,
                 response=response,
             )
@@ -1783,6 +1960,43 @@ class FrequencyTRF:
             ax=ax,
             color=color,
             linewidth=linewidth,
+            title=title,
+        )
+
+    def plot_cross_spectrum(
+        self,
+        *,
+        stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
+        response: np.ndarray | Sequence[np.ndarray] | None = None,
+        diagnostics: FrequencyTRFDiagnostics | None = None,
+        output_index: int = 0,
+        kind: str = "both",
+        ax=None,
+        color: str | None = None,
+        phase_color: str | None = None,
+        linewidth: float = 2.0,
+        phase_unit: str = "rad",
+        title: str | None = None,
+    ):
+        """Plot the predicted-vs-observed cross spectrum for one output."""
+
+        from .plotting import plot_cross_spectrum
+
+        if diagnostics is None:
+            diagnostics = self.cross_spectral_diagnostics(
+                stimulus=stimulus,
+                response=response,
+            )
+        return plot_cross_spectrum(
+            frequencies=diagnostics.frequencies,
+            cross_spectrum=diagnostics.cross_spectrum,
+            output_index=output_index,
+            kind=kind,
+            ax=ax,
+            color=color,
+            phase_color=phase_color,
+            linewidth=linewidth,
+            phase_unit=phase_unit,
             title=title,
         )
 
