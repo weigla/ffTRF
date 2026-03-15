@@ -1,3 +1,5 @@
 """Compatibility alias for :mod:`fftrf.plotting`."""
 
-from fftrf.plotting import *  # noqa: F401,F403
+import fftrf.plotting as _plotting
+
+globals().update(_plotting.__dict__)

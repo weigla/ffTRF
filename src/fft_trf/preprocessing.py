@@ -1,3 +1,5 @@
 """Compatibility alias for :mod:`fftrf.preprocessing`."""
 
-from fftrf.preprocessing import *  # noqa: F401,F403
+import fftrf.preprocessing as _preprocessing
+
+globals().update(_preprocessing.__dict__)

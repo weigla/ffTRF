@@ -419,3 +419,12 @@ def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() ->
         model.plot(input_index=1)
     with pytest.raises(IndexError):
         model.plot(output_index=1)
+
+
+def test_legacy_fft_trf_import_aliases_new_package() -> None:
+    import fft_trf
+    import fft_trf.model as legacy_model_module
+
+    assert fft_trf.FrequencyTRF is FrequencyTRF
+    assert legacy_model_module.FrequencyTRF is model_module.FrequencyTRF
+    assert hasattr(legacy_model_module, "_build_spectral_cache")
