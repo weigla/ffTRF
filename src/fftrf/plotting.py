@@ -153,6 +153,132 @@ def plot_kernel_grid(
     return fig, axes
 
 
+def plot_transfer_function(
+    *,
+    frequencies: np.ndarray,
+    transfer_function: np.ndarray,
+    kind: str = "both",
+    ax: Any = None,
+    color: str | None = None,
+    phase_color: str | None = None,
+    linewidth: float = 2.0,
+    phase_unit: str = "rad",
+    title: str | None = None,
+) -> tuple[Any, Any]:
+    """Plot magnitude and/or phase of a complex transfer function."""
+
+    plt = _require_matplotlib()
+    frequencies = np.asarray(frequencies, dtype=float)
+    transfer_function = np.asarray(transfer_function, dtype=np.complex128)
+    if frequencies.ndim != 1 or transfer_function.ndim != 1:
+        raise ValueError("frequencies and transfer_function must both be 1D arrays.")
+    if frequencies.shape[0] != transfer_function.shape[0]:
+        raise ValueError("frequencies and transfer_function must have matching lengths.")
+
+    resolved_kind = str(kind).strip().lower()
+    if resolved_kind not in {"magnitude", "phase", "both"}:
+        raise ValueError("kind must be 'magnitude', 'phase', or 'both'.")
+
+    if resolved_kind == "both":
+        if ax is None:
+            fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+        else:
+            axes = np.asarray(ax, dtype=object)
+            if axes.shape != (2,):
+                raise ValueError("ax must contain two axes when kind='both'.")
+            fig = axes.flat[0].figure
+        magnitude_ax = axes[0]
+        phase_ax = axes[1]
+        magnitude_ax.plot(
+            frequencies,
+            np.abs(transfer_function),
+            color=color,
+            linewidth=linewidth,
+        )
+        magnitude_ax.set_ylabel("Magnitude")
+        magnitude_ax.grid(alpha=0.2, linewidth=0.6)
+
+        phase_values, phase_label = _phase_axis(transfer_function, phase_unit=phase_unit)
+        phase_ax.plot(
+            frequencies,
+            phase_values,
+            color=phase_color or color,
+            linewidth=linewidth,
+        )
+        phase_ax.set_ylabel(phase_label)
+        phase_ax.set_xlabel("Frequency (Hz)")
+        phase_ax.grid(alpha=0.2, linewidth=0.6)
+        if title is not None:
+            magnitude_ax.set_title(title)
+        else:
+            magnitude_ax.set_title("Transfer function")
+        fig.tight_layout()
+        return fig, axes
+
+    fig, axis = _coerce_axes(plt, ax)
+    if resolved_kind == "magnitude":
+        axis.plot(
+            frequencies,
+            np.abs(transfer_function),
+            color=color,
+            linewidth=linewidth,
+        )
+        axis.set_ylabel("Magnitude")
+        axis.set_title(title or "Transfer-function magnitude")
+    else:
+        phase_values, phase_label = _phase_axis(transfer_function, phase_unit=phase_unit)
+        axis.plot(
+            frequencies,
+            phase_values,
+            color=phase_color or color,
+            linewidth=linewidth,
+        )
+        axis.set_ylabel(phase_label)
+        axis.set_title(title or "Transfer-function phase")
+    axis.set_xlabel("Frequency (Hz)")
+    axis.grid(alpha=0.2, linewidth=0.6)
+    return fig, axis
+
+
+def plot_coherence(
+    *,
+    frequencies: np.ndarray,
+    coherence: np.ndarray,
+    output_index: int = 0,
+    ax: Any = None,
+    color: str | None = None,
+    linewidth: float = 2.0,
+    title: str | None = None,
+) -> tuple[Any, Any]:
+    """Plot one observed-vs-predicted coherence curve."""
+
+    plt = _require_matplotlib()
+    frequencies = np.asarray(frequencies, dtype=float)
+    coherence = np.asarray(coherence, dtype=float)
+    if frequencies.ndim != 1:
+        raise ValueError("frequencies must be a 1D array.")
+    if coherence.ndim != 2:
+        raise ValueError("coherence must have shape (n_frequencies, n_outputs).")
+    if coherence.shape[0] != frequencies.shape[0]:
+        raise ValueError("coherence must match the length of frequencies.")
+    if not 0 <= int(output_index) < coherence.shape[1]:
+        raise IndexError(f"output_index out of bounds: {output_index}")
+
+    fig, axis = _coerce_axes(plt, ax)
+    axis.plot(
+        frequencies,
+        coherence[:, int(output_index)],
+        color=color,
+        linewidth=linewidth,
+    )
+    axis.set_xlabel("Frequency (Hz)")
+    axis.set_ylabel("Coherence")
+    axis.set_ylim(0.0, 1.05)
+    axis.grid(alpha=0.2, linewidth=0.6)
+    axis.set_title(title or f"Observed vs predicted coherence (output {int(output_index) + 1})")
+    return fig, axis
+
+
 def _plot_kernel_on_axes(
     ax: Any,
     *,
@@ -252,6 +378,20 @@ def _time_axis(times: np.ndarray, *, time_unit: str) -> tuple[np.ndarray, str]:
     if time_unit == "ms":
         return times * 1e3, "Lag (ms)"
     raise ValueError("time_unit must be either 's' or 'ms'.")
+
+
+def _phase_axis(
+    transfer_function: np.ndarray,
+    *,
+    phase_unit: str,
+) -> tuple[np.ndarray, str]:
+    resolved_unit = str(phase_unit).strip().lower()
+    phase = np.unwrap(np.angle(transfer_function))
+    if resolved_unit == "rad":
+        return phase, "Phase (rad)"
+    if resolved_unit == "deg":
+        return np.rad2deg(phase), "Phase (deg)"
+    raise ValueError("phase_unit must be either 'rad' or 'deg'.")
 
 
 def _require_matplotlib() -> Any:

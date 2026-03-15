@@ -16,6 +16,7 @@ rates, or represented by many lagged samples.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import product
 import pickle
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -24,8 +25,12 @@ import numpy as np
 from scipy.fft import next_fast_len
 from scipy.signal import detrend as scipy_detrend
 from scipy.signal import fftconvolve, get_window
+from scipy.signal.windows import dpss
 
 _USE_STORED_TRIAL_WEIGHTS = object()
+RegularizationSpec = float | tuple[float, ...]
+MetricSpec = str | Callable[[np.ndarray, np.ndarray], np.ndarray]
+SpectralMethod = str
 
 
 def pearsonr(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
@@ -65,6 +70,99 @@ def pearsonr(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
     valid = denominator > np.finfo(float).eps
     out[valid] = numerator[valid] / denominator[valid]
     return out
+
+
+def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """Compute column-wise coefficient of determination.
+
+    Parameters
+    ----------
+    y_true:
+        Observed samples arranged as ``(n_samples, n_outputs)``.
+    y_pred:
+        Predicted samples with the same shape as ``y_true``.
+
+    Returns
+    -------
+    numpy.ndarray
+        One :math:`R^2` value per output column.
+
+    Notes
+    -----
+    Scores can become negative when predictions are worse than a constant mean
+    predictor. This makes the metric suitable for model comparison and
+    cross-validation because larger values remain better.
+    """
+
+    y_true = _ensure_2d(y_true, "y_true")
+    y_pred = _ensure_2d(y_pred, "y_pred")
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape.")
+
+    residual = np.sum((y_true - y_pred) ** 2, axis=0)
+    total = np.sum((y_true - y_true.mean(axis=0, keepdims=True)) ** 2, axis=0)
+    eps = np.finfo(float).eps
+
+    out = np.zeros(y_true.shape[1], dtype=float)
+    valid = total > eps
+    out[valid] = 1.0 - (residual[valid] / total[valid])
+    perfect = (~valid) & (residual <= eps)
+    out[perfect] = 1.0
+    return out
+
+
+def explained_variance_score(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """Compute column-wise explained variance.
+
+    Parameters
+    ----------
+    y_true:
+        Observed samples arranged as ``(n_samples, n_outputs)``.
+    y_pred:
+        Predicted samples with the same shape as ``y_true``.
+
+    Returns
+    -------
+    numpy.ndarray
+        One explained-variance score per output column.
+
+    Notes
+    -----
+    Explained variance focuses on residual variance rather than absolute error
+    magnitude. Like :func:`r2_score`, larger values are better.
+    """
+
+    y_true = _ensure_2d(y_true, "y_true")
+    y_pred = _ensure_2d(y_pred, "y_pred")
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape.")
+
+    residual = y_true - y_pred
+    variance_true = np.var(y_true, axis=0)
+    variance_residual = np.var(residual, axis=0)
+    eps = np.finfo(float).eps
+
+    out = np.zeros(y_true.shape[1], dtype=float)
+    valid = variance_true > eps
+    out[valid] = 1.0 - (variance_residual[valid] / variance_true[valid])
+    perfect = (~valid) & (variance_residual <= eps)
+    out[perfect] = 1.0
+    return out
+
+
+_METRIC_REGISTRY: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
+    "pearsonr": pearsonr,
+    "r2": r2_score,
+    "r2_score": r2_score,
+    "explained_variance": explained_variance_score,
+    "explained_variance_score": explained_variance_score,
+}
+
+
+def available_metrics() -> tuple[str, ...]:
+    """Return the names of built-in scoring metrics."""
+
+    return tuple(sorted(_METRIC_REGISTRY))
 
 
 def _ensure_2d(array: np.ndarray, name: str) -> np.ndarray:
@@ -126,6 +224,21 @@ def _normalize_trial_weights(
     return _normalize_weight_vector(_resolve_raw_trial_weights(y_trials, trial_weights))
 
 
+def _resolve_metric(
+    metric: MetricSpec,
+) -> tuple[Callable[[np.ndarray, np.ndarray], np.ndarray], str | None]:
+    if isinstance(metric, str):
+        key = metric.strip().lower()
+        if key not in _METRIC_REGISTRY:
+            available = ", ".join(sorted(_METRIC_REGISTRY))
+            raise ValueError(f"Unknown metric {metric!r}. Available built-ins are: {available}.")
+        return _METRIC_REGISTRY[key], key
+
+    if not callable(metric):
+        raise ValueError("metric must be callable or a known metric name.")
+    return metric, getattr(metric, "__name__", None)
+
+
 def _copy_value(value):
     if isinstance(value, np.ndarray):
         return value.copy()
@@ -134,6 +247,177 @@ def _copy_value(value):
     if isinstance(value, dict):
         return {key: _copy_value(item) for key, item in value.items()}
     return value
+
+
+def _coerce_nonnegative_float(value: float, *, name: str) -> float:
+    coerced = float(value)
+    if not np.isfinite(coerced) or coerced < 0.0:
+        raise ValueError(f"{name} must be finite and non-negative.")
+    return coerced
+
+
+def _is_scalar_like(value: object) -> bool:
+    try:
+        return np.asarray(value).ndim == 0
+    except Exception:
+        return False
+
+
+def _validate_bands(
+    bands: None | Sequence[int],
+    *,
+    n_inputs: int,
+) -> tuple[int, ...] | None:
+    if bands is None:
+        return None
+    try:
+        raw_bands = list(bands)
+    except TypeError as exc:
+        raise ValueError("bands must be a non-empty sequence of positive integers.") from exc
+    if len(raw_bands) == 0:
+        raise ValueError("bands must be a non-empty sequence of positive integers.")
+
+    resolved_bands = []
+    for band_index, band in enumerate(raw_bands):
+        band_float = float(band)
+        if (
+            not np.isfinite(band_float)
+            or band_float <= 0.0
+            or not band_float.is_integer()
+        ):
+            raise ValueError(
+                f"bands[{band_index}] must be a positive integer, got {band!r}."
+            )
+        resolved_bands.append(int(band_float))
+
+    if sum(resolved_bands) != n_inputs:
+        raise ValueError(
+            "bands must sum to the number of predictor features. "
+            f"Got sum(bands)={sum(resolved_bands)} and n_inputs={n_inputs}."
+        )
+    return tuple(resolved_bands)
+
+
+def _expand_feature_regularization(
+    coefficients: Sequence[float],
+    *,
+    n_inputs: int,
+    bands: tuple[int, ...] | None,
+) -> np.ndarray:
+    if bands is None:
+        if len(coefficients) != 1:
+            raise ValueError("Scalar ridge regularization expects exactly one coefficient.")
+        return np.full(
+            n_inputs,
+            _coerce_nonnegative_float(coefficients[0], name="regularization"),
+            dtype=float,
+        )
+
+    if len(coefficients) != len(bands):
+        raise ValueError("One regularization coefficient is required for each entry in bands.")
+
+    return np.concatenate(
+        [
+            np.full(
+                band_size,
+                _coerce_nonnegative_float(coefficient, name="regularization"),
+                dtype=float,
+            )
+            for coefficient, band_size in zip(coefficients, bands)
+        ]
+    )
+
+
+def _resolve_regularization_candidates(
+    regularization: float | Sequence[float] | Sequence[Sequence[float]],
+    *,
+    n_inputs: int,
+    bands: tuple[int, ...] | None,
+) -> tuple[list[np.ndarray], list[RegularizationSpec]]:
+    if _is_scalar_like(regularization):
+        value = _coerce_nonnegative_float(float(regularization), name="regularization")
+        spec: RegularizationSpec = value if bands is None else tuple([value] * len(bands))
+        return [
+            _expand_feature_regularization(
+                [value] if bands is None else [value] * len(bands),
+                n_inputs=n_inputs,
+                bands=bands,
+            )
+        ], [spec]
+
+    raw_items = list(regularization)
+    if len(raw_items) == 0:
+        raise ValueError("regularization must be a scalar or a non-empty sequence.")
+
+    if bands is None:
+        if any(not _is_scalar_like(item) for item in raw_items):
+            raise ValueError(
+                "Without bands, regularization must be a scalar or a 1D sequence of scalars."
+            )
+        values = [
+            _coerce_nonnegative_float(float(item), name="regularization")
+            for item in raw_items
+        ]
+        return [
+            _expand_feature_regularization([value], n_inputs=n_inputs, bands=None)
+            for value in values
+        ], values
+
+    n_bands = len(bands)
+    if all(_is_scalar_like(item) for item in raw_items):
+        pool = [
+            _coerce_nonnegative_float(float(item), name="regularization")
+            for item in raw_items
+        ]
+        if len(pool) == 1:
+            coefficients = tuple([pool[0]] * n_bands)
+            return [
+                _expand_feature_regularization(
+                    coefficients,
+                    n_inputs=n_inputs,
+                    bands=bands,
+                )
+            ], [coefficients]
+
+        coefficient_sets = [tuple(combo) for combo in product(pool, repeat=n_bands)]
+        return [
+            _expand_feature_regularization(
+                coefficients,
+                n_inputs=n_inputs,
+                bands=bands,
+            )
+            for coefficients in coefficient_sets
+        ], coefficient_sets
+
+    if any(_is_scalar_like(item) for item in raw_items):
+        raise ValueError(
+            "When bands is provided, explicit banded regularization candidates "
+            "must either be all scalars or all sequences of per-band coefficients."
+        )
+
+    specs: list[RegularizationSpec] = []
+    penalties: list[np.ndarray] = []
+    for candidate_index, candidate in enumerate(raw_items):
+        coefficients = np.asarray(candidate, dtype=float)
+        if coefficients.ndim != 1 or coefficients.shape[0] != n_bands:
+            raise ValueError(
+                "Each explicit banded regularization candidate must be a 1D sequence "
+                f"with {n_bands} values, got shape {coefficients.shape!r} for "
+                f"candidate {candidate_index}."
+            )
+        coefficient_tuple = tuple(
+            _coerce_nonnegative_float(value, name="regularization")
+            for value in coefficients.tolist()
+        )
+        specs.append(coefficient_tuple)
+        penalties.append(
+            _expand_feature_regularization(
+                coefficient_tuple,
+                n_inputs=n_inputs,
+                bands=bands,
+            )
+        )
+    return penalties, specs
 
 
 @dataclass(slots=True)
@@ -145,8 +429,44 @@ class _SpectralCache:
     segment_length: int
     n_fft: int
     overlap: float
+    spectral_method: SpectralMethod
+    time_bandwidth: float | None
+    n_tapers: int | None
     window: None | str | tuple[str, float] | np.ndarray
     detrend: None | str
+
+
+@dataclass(slots=True)
+class FrequencyTRFDiagnostics:
+    """Observed-vs-predicted spectral diagnostics for a fitted model.
+
+    Attributes
+    ----------
+    frequencies:
+        Frequency vector in Hz.
+    transfer_function:
+        Complex transfer function copied from the fitted model. Shape is
+        ``(n_frequencies, n_inputs, n_outputs)``.
+    predicted_spectrum:
+        Diagonal auto-spectrum of the model predictions for each output. Shape
+        is ``(n_frequencies, n_outputs)``.
+    observed_spectrum:
+        Diagonal auto-spectrum of the observed targets. Shape is
+        ``(n_frequencies, n_outputs)``.
+    cross_spectrum:
+        Matched predicted-vs-observed cross-spectrum for each output. Shape is
+        ``(n_frequencies, n_outputs)``.
+    coherence:
+        Magnitude-squared coherence between each predicted output and the
+        corresponding observed target. Shape is ``(n_frequencies, n_outputs)``.
+    """
+
+    frequencies: np.ndarray
+    transfer_function: np.ndarray
+    predicted_spectrum: np.ndarray
+    observed_spectrum: np.ndarray
+    cross_spectrum: np.ndarray
+    coherence: np.ndarray
 
 
 def _resolve_raw_trial_weights(
@@ -179,6 +499,37 @@ def _normalize_weight_vector(weights: np.ndarray) -> np.ndarray:
     if not np.isfinite(total) or total <= 0:
         raise ValueError("Trial weights must sum to a positive finite value.")
     return weights / total
+
+
+def _validate_spectral_method(spectral_method: str) -> str:
+    resolved = str(spectral_method).strip().lower()
+    if resolved not in {"standard", "multitaper"}:
+        raise ValueError("spectral_method must be either 'standard' or 'multitaper'.")
+    return resolved
+
+
+def _resolve_multitaper_parameters(
+    *,
+    time_bandwidth: float,
+    n_tapers: int | None,
+) -> tuple[float, int]:
+    resolved_time_bandwidth = float(time_bandwidth)
+    if not np.isfinite(resolved_time_bandwidth) or resolved_time_bandwidth <= 0.5:
+        raise ValueError("time_bandwidth must be finite and greater than 0.5 for multitaper.")
+
+    max_tapers = max(1, int(np.floor(2.0 * resolved_time_bandwidth - 1.0)))
+    if n_tapers is None:
+        resolved_n_tapers = max_tapers
+    else:
+        resolved_n_tapers = int(n_tapers)
+        if resolved_n_tapers <= 0:
+            raise ValueError("n_tapers must be positive.")
+        if resolved_n_tapers > max_tapers:
+            raise ValueError(
+                "n_tapers is too large for the requested time_bandwidth. "
+                f"Use at most {max_tapers} tapers for time_bandwidth={resolved_time_bandwidth}."
+            )
+    return resolved_time_bandwidth, resolved_n_tapers
 
 
 def _prepare_segment(
@@ -266,9 +617,13 @@ def _build_spectral_cache(
     segment_length: int | None,
     overlap: float,
     n_fft: int | None,
+    spectral_method: SpectralMethod,
+    time_bandwidth: float,
+    n_tapers: int | None,
     window: None | str | tuple[str, float] | np.ndarray,
     detrend: None | str,
 ) -> _SpectralCache:
+    spectral_method = _validate_spectral_method(spectral_method)
     resolved_segment_length, resolved_n_fft = _resolve_spectral_settings(
         x_trials,
         segment_length=segment_length,
@@ -283,6 +638,16 @@ def _build_spectral_cache(
     trial_cxy = np.zeros((n_trials, n_frequencies, n_inputs, n_outputs), dtype=np.complex128)
 
     window_cache: dict[int, np.ndarray] = {}
+    taper_cache: dict[tuple[int, float, int], np.ndarray] = {}
+    if spectral_method == "multitaper":
+        resolved_time_bandwidth, resolved_n_tapers = _resolve_multitaper_parameters(
+            time_bandwidth=float(time_bandwidth),
+            n_tapers=n_tapers,
+        )
+    else:
+        resolved_time_bandwidth = None
+        resolved_n_tapers = None
+
     for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials)):
         segments = list(
             _iter_segments(
@@ -294,30 +659,76 @@ def _build_spectral_cache(
         )
         segment_weight = 1.0 / len(segments)
         for x_segment, y_segment in segments:
-            x_prepared = _prepare_segment(
-                x_segment,
-                target_length=resolved_segment_length,
-                window_cache=window_cache,
-                window=window,
-                detrend=detrend,
-            )
-            y_prepared = _prepare_segment(
-                y_segment,
-                target_length=resolved_segment_length,
-                window_cache=window_cache,
-                window=window,
-                detrend=detrend,
-            )
+            if spectral_method == "multitaper":
+                taper_key = (
+                    x_segment.shape[0],
+                    float(resolved_time_bandwidth),
+                    int(resolved_n_tapers),
+                )
+                tapers = taper_cache.get(taper_key)
+                if tapers is None:
+                    tapers = np.asarray(
+                        dpss(
+                            x_segment.shape[0],
+                            NW=float(resolved_time_bandwidth),
+                            Kmax=int(resolved_n_tapers),
+                            sym=False,
+                        ),
+                        dtype=float,
+                    )
+                    tapers /= np.sqrt(np.mean(tapers**2, axis=1, keepdims=True))
+                    taper_cache[taper_key] = tapers
+                taper_weight = segment_weight / tapers.shape[0]
+                for taper in tapers:
+                    x_prepared = _prepare_segment(
+                        x_segment,
+                        target_length=resolved_segment_length,
+                        window_cache=window_cache,
+                        window=taper,
+                        detrend=detrend,
+                    )
+                    y_prepared = _prepare_segment(
+                        y_segment,
+                        target_length=resolved_segment_length,
+                        window_cache=window_cache,
+                        window=taper,
+                        detrend=detrend,
+                    )
 
-            x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
-            y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
+                    x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
+                    y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
 
-            trial_cxx[trial_index] += segment_weight * np.einsum(
-                "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
-            )
-            trial_cxy[trial_index] += segment_weight * np.einsum(
-                "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
-            )
+                    trial_cxx[trial_index] += taper_weight * np.einsum(
+                        "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
+                    )
+                    trial_cxy[trial_index] += taper_weight * np.einsum(
+                        "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
+                    )
+            else:
+                x_prepared = _prepare_segment(
+                    x_segment,
+                    target_length=resolved_segment_length,
+                    window_cache=window_cache,
+                    window=window,
+                    detrend=detrend,
+                )
+                y_prepared = _prepare_segment(
+                    y_segment,
+                    target_length=resolved_segment_length,
+                    window_cache=window_cache,
+                    window=window,
+                    detrend=detrend,
+                )
+
+                x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
+                y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
+
+                trial_cxx[trial_index] += segment_weight * np.einsum(
+                    "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
+                )
+                trial_cxy[trial_index] += segment_weight * np.einsum(
+                    "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
+                )
 
     return _SpectralCache(
         trial_cxx=trial_cxx,
@@ -325,6 +736,9 @@ def _build_spectral_cache(
         segment_length=resolved_segment_length,
         n_fft=resolved_n_fft,
         overlap=overlap,
+        spectral_method=spectral_method,
+        time_bandwidth=resolved_time_bandwidth,
+        n_tapers=resolved_n_tapers,
         window=_copy_value(window),
         detrend=detrend,
     )
@@ -362,12 +776,28 @@ def _solve_transfer_function(
     cxx: np.ndarray,
     cxy: np.ndarray,
     *,
-    regularization: float,
+    feature_regularization: np.ndarray,
 ) -> np.ndarray:
-    eye = np.eye(cxx.shape[1], dtype=np.complex128)
+    feature_regularization = np.asarray(feature_regularization, dtype=float)
+    if feature_regularization.shape != (cxx.shape[1],):
+        raise ValueError(
+            "feature_regularization must provide one penalty per predictor feature."
+        )
+
+    if np.allclose(feature_regularization, feature_regularization[0]):
+        ridge_matrix = (
+            _coerce_nonnegative_float(
+                float(feature_regularization[0]),
+                name="feature_regularization",
+            )
+            * np.eye(cxx.shape[1], dtype=np.complex128)
+        )
+    else:
+        ridge_matrix = np.diag(feature_regularization.astype(np.complex128))
+
     transfer_function = np.zeros_like(cxy)
     for frequency_index in range(cxx.shape[0]):
-        system = cxx[frequency_index] + regularization * eye
+        system = cxx[frequency_index] + ridge_matrix
         transfer_function[frequency_index] = np.linalg.solve(system, cxy[frequency_index])
     return transfer_function
 
@@ -424,7 +854,7 @@ def _compute_bootstrap_interval_from_cache(
     fs: float,
     tmin: float,
     tmax: float,
-    regularization: float,
+    feature_regularization: np.ndarray,
     raw_trial_weights: np.ndarray,
     n_bootstraps: int,
     level: float,
@@ -459,7 +889,7 @@ def _compute_bootstrap_interval_from_cache(
         transfer_function = _solve_transfer_function(
             cxx,
             cxy,
-            regularization=regularization,
+            feature_regularization=feature_regularization,
         )
         kernels[bootstrap_index], times = _extract_impulse_response(
             transfer_function,
@@ -520,9 +950,10 @@ class FrequencyTRF:
         (stimulus -> neural response) and ``-1`` for a backward model
         (neural response -> stimulus).
     metric:
-        Callable used to score predictions. It must accept ``(y_true, y_pred)``
-        and return one score per output column. By default a column-wise Pearson
-        correlation is used.
+        Callable or built-in metric name used to score predictions. It must
+        accept ``(y_true, y_pred)`` and return one score per output column.
+        Built-ins currently include ``"pearsonr"``, ``"r2"``, and
+        ``"explained_variance"``.
 
     Attributes
     ----------
@@ -538,7 +969,18 @@ class FrequencyTRF:
         Lag values in seconds corresponding to the second axis of
         :attr:`weights`.
     regularization:
-        Selected ridge parameter.
+        Selected ridge parameter. In ordinary ridge mode this is a scalar. When
+        ``bands`` are used, it stores one coefficient per band.
+    bands:
+        Optional contiguous feature-group definition used for banded
+        regularization.
+    feature_regularization:
+        Expanded per-feature penalty vector actually used by the spectral
+        solver. This is especially useful when banded regularization is active.
+    regularization_candidates:
+        Candidate ridge values or banded coefficient tuples evaluated during
+        training. This lets cross-validation scores be mapped back to the
+        tested values.
     fs:
         Sampling rate used during fitting.
     bootstrap_interval:
@@ -546,6 +988,13 @@ class FrequencyTRF:
         ``(2, n_inputs, n_lags, n_outputs)``.
     bootstrap_level:
         Confidence level used for :attr:`bootstrap_interval`.
+    spectral_method:
+        Spectral estimator used during fitting. ``"standard"`` denotes the
+        default windowed FFT estimator and ``"multitaper"`` activates DPSS
+        multi-taper averaging.
+    time_bandwidth, n_tapers:
+        Multi-taper settings stored for fitted models that use
+        ``spectral_method="multitaper"``.
 
     Examples
     --------
@@ -561,15 +1010,13 @@ class FrequencyTRF:
     def __init__(
         self,
         direction: int = 1,
-        metric: Callable[[np.ndarray, np.ndarray], np.ndarray] = pearsonr,
+        metric: MetricSpec = pearsonr,
     ) -> None:
         if direction not in (1, -1):
             raise ValueError("direction must be 1 (forward) or -1 (backward).")
-        if not callable(metric):
-            raise ValueError("metric must be callable.")
 
         self.direction = direction
-        self.metric = metric
+        self.metric, self.metric_name = _resolve_metric(metric)
 
         self.transfer_function: np.ndarray | None = None
         self.frequencies: np.ndarray | None = None
@@ -577,10 +1024,16 @@ class FrequencyTRF:
         self.times: np.ndarray | None = None
 
         self.fs: float | None = None
-        self.regularization: float | None = None
+        self.regularization: RegularizationSpec | None = None
+        self.bands: tuple[int, ...] | None = None
+        self.feature_regularization: np.ndarray | None = None
+        self.regularization_candidates: list[RegularizationSpec] | None = None
         self.segment_length: int | None = None
         self.n_fft: int | None = None
         self.overlap: float | None = None
+        self.spectral_method: SpectralMethod = "standard"
+        self.time_bandwidth: float | None = None
+        self.n_tapers: int | None = None
         self.window: None | str | tuple[str, float] | np.ndarray = None
         self.detrend: None | str = None
         self.tmin: float | None = None
@@ -597,11 +1050,15 @@ class FrequencyTRF:
         fs: float,
         tmin: float,
         tmax: float,
-        regularization: float | Sequence[float],
+        regularization: float | Sequence[float] | Sequence[Sequence[float]],
         *,
+        bands: None | Sequence[int] = None,
         segment_length: int | None = None,
         overlap: float = 0.0,
         n_fft: int | None = None,
+        spectral_method: SpectralMethod = "standard",
+        time_bandwidth: float = 3.5,
+        n_tapers: int | None = None,
         window: None | str | tuple[str, float] | np.ndarray = None,
         detrend: None | str = "constant",
         k: int = -1,
@@ -631,11 +1088,23 @@ class FrequencyTRF:
             Time window, in seconds, that should be extracted from the learned
             transfer function as a time-domain kernel.
         regularization:
-            Either a single ridge value or a sequence of candidate values. The
-            value is applied directly as ``lambda * I`` in the spectral linear
-            system. When a sequence is provided, cross-validation is used to
-            select the best value before fitting the final model on all training
-            trials.
+            Regularization specification. The default behavior matches a
+            standard ridge TRF fit:
+
+            - scalar: fit directly with one ridge value
+            - 1D sequence of scalars: cross-validate over those candidates
+
+            When ``bands`` is provided, each feature group gets its own ridge
+            coefficient. In that mode, a 1D scalar sequence follows the
+            ``mTRFpy`` banded-ridge convention: the Cartesian product across
+            bands is evaluated during cross-validation. You can also pass an
+            explicit sequence of per-band coefficient tuples.
+        bands:
+            Optional contiguous feature-group sizes for banded ridge
+            regularization. For example, if the predictor contains one envelope
+            feature followed by a 16-band spectrogram, use ``bands=[1, 16]``.
+            Leaving this as ``None`` keeps the estimator in ordinary scalar
+            ridge mode.
         segment_length:
             Segment size used to estimate cross-spectra. If ``None``, each trial
             is treated as a single segment.
@@ -645,11 +1114,24 @@ class FrequencyTRF:
         n_fft:
             FFT size used for spectral estimation. If omitted, a fast FFT length
             is chosen automatically from ``segment_length``.
+        spectral_method:
+            Spectral estimator used to compute the sufficient statistics.
+            ``"standard"`` keeps the current windowed FFT behavior.
+            ``"multitaper"`` averages DPSS-tapered spectra and is often more
+            stable for noisy continuous data.
+        time_bandwidth:
+            Time-bandwidth product used when ``spectral_method="multitaper"``.
+            Larger values produce broader spectral smoothing and allow more
+            tapers.
+        n_tapers:
+            Number of DPSS tapers used for ``spectral_method="multitaper"``.
+            If omitted, the default ``2 * time_bandwidth - 1`` rule is used.
         window:
             Window applied to each segment before FFT. By default no window is
             applied, which keeps the behavior closer to a standard lagged ridge
             fit. When using short overlapping segments, ``window="hann"`` is
-            often a good choice.
+            often a good choice. In multi-taper mode this must be ``None``
+            because the DPSS tapers already define the segment weighting.
         detrend:
             Optional detrending passed to :func:`scipy.signal.detrend`.
         k:
@@ -679,7 +1161,8 @@ class FrequencyTRF:
         None or numpy.ndarray
             ``None`` when a single regularization value is fitted directly.
             Otherwise returns cross-validation scores for each candidate
-            regularization value.
+            regularization setting in the order stored by
+            :attr:`regularization_candidates`.
 
         Notes
         -----
@@ -687,7 +1170,9 @@ class FrequencyTRF:
         cross-validation is used. In that case the final fit uses the selected
         regularization value and all provided trials. When multiple
         regularization values are supplied, the per-trial spectra are cached so
-        the FFT work is performed only once.
+        the FFT work is performed only once. Banded regularization is entirely
+        opt-in through ``bands``; leaving it unset preserves the default
+        "mTRF in Fourier space" workflow.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -696,19 +1181,38 @@ class FrequencyTRF:
 
         x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
         self._validate_dimensions(x_trials, y_trials)
-        self._validate_fit_arguments(fs, tmin, tmax, segment_length, overlap, n_fft, detrend)
+        self._validate_fit_arguments(
+            fs,
+            tmin,
+            tmax,
+            segment_length,
+            overlap,
+            n_fft,
+            spectral_method,
+            time_bandwidth,
+            n_tapers,
+            window,
+            detrend,
+        )
         if int(bootstrap_samples) < 0:
             raise ValueError("bootstrap_samples must be non-negative.")
         _validate_confidence_level(bootstrap_level, name="bootstrap_level")
-
-        regularization_values = np.atleast_1d(np.asarray(regularization, dtype=float))
+        spectral_method = _validate_spectral_method(spectral_method)
+        resolved_bands = _validate_bands(bands, n_inputs=x_trials[0].shape[1])
+        feature_regularization_values, regularization_specs = _resolve_regularization_candidates(
+            regularization,
+            n_inputs=x_trials[0].shape[1],
+            bands=resolved_bands,
+        )
         raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
         self.trial_weights = _copy_value(trial_weights)
+        self.bands = resolved_bands
+        self.regularization_candidates = [_copy_value(spec) for spec in regularization_specs]
         self.bootstrap_interval = None
         self.bootstrap_level = None
         self.bootstrap_samples = None
 
-        needs_cache = regularization_values.size > 1 or int(bootstrap_samples) > 0
+        needs_cache = len(feature_regularization_values) > 1 or int(bootstrap_samples) > 0
         spectral_cache = None
         if needs_cache:
             spectral_cache = _build_spectral_cache(
@@ -717,11 +1221,14 @@ class FrequencyTRF:
                 segment_length=segment_length,
                 overlap=overlap,
                 n_fft=n_fft,
+                spectral_method=spectral_method,
+                time_bandwidth=time_bandwidth,
+                n_tapers=n_tapers,
                 window=window,
                 detrend=detrend,
             )
 
-        if regularization_values.size == 1:
+        if len(feature_regularization_values) == 1:
             if spectral_cache is None:
                 self._fit(
                     x_trials,
@@ -729,10 +1236,15 @@ class FrequencyTRF:
                     fs=fs,
                     tmin=tmin,
                     tmax=tmax,
-                    regularization=float(regularization_values[0]),
+                    regularization=regularization_specs[0],
+                    feature_regularization=feature_regularization_values[0],
+                    bands=resolved_bands,
                     segment_length=segment_length,
                     overlap=overlap,
                     n_fft=n_fft,
+                    spectral_method=spectral_method,
+                    time_bandwidth=time_bandwidth,
+                    n_tapers=n_tapers,
                     window=window,
                     detrend=detrend,
                     trial_weights=trial_weights,
@@ -743,7 +1255,9 @@ class FrequencyTRF:
                     fs=fs,
                     tmin=tmin,
                     tmax=tmax,
-                    regularization=float(regularization_values[0]),
+                    regularization=regularization_specs[0],
+                    feature_regularization=feature_regularization_values[0],
+                    bands=resolved_bands,
                     raw_trial_weights=raw_trial_weights,
                 )
                 if bootstrap_samples > 0:
@@ -752,7 +1266,7 @@ class FrequencyTRF:
                         fs=fs,
                         tmin=tmin,
                         tmax=tmax,
-                        regularization=float(regularization_values[0]),
+                        feature_regularization=feature_regularization_values[0],
                         raw_trial_weights=raw_trial_weights,
                         n_bootstraps=int(bootstrap_samples),
                         level=float(bootstrap_level),
@@ -768,10 +1282,13 @@ class FrequencyTRF:
             fs=fs,
             tmin=tmin,
             tmax=tmax,
-            regularization_values=regularization_values,
+            feature_regularization_values=feature_regularization_values,
             segment_length=segment_length,
             overlap=overlap,
             n_fft=n_fft,
+            spectral_method=spectral_method,
+            time_bandwidth=time_bandwidth,
+            n_tapers=n_tapers,
             window=window,
             detrend=detrend,
             k=k,
@@ -792,7 +1309,9 @@ class FrequencyTRF:
             fs=fs,
             tmin=tmin,
             tmax=tmax,
-            regularization=float(regularization_values[best_index]),
+            regularization=regularization_specs[best_index],
+            feature_regularization=feature_regularization_values[best_index],
+            bands=resolved_bands,
             raw_trial_weights=raw_trial_weights,
         )
         if bootstrap_samples > 0:
@@ -801,7 +1320,7 @@ class FrequencyTRF:
                 fs=fs,
                 tmin=tmin,
                 tmax=tmax,
-                regularization=float(regularization_values[best_index]),
+                feature_regularization=feature_regularization_values[best_index],
                 raw_trial_weights=raw_trial_weights,
                 n_bootstraps=int(bootstrap_samples),
                 level=float(bootstrap_level),
@@ -819,10 +1338,15 @@ class FrequencyTRF:
         fs: float,
         tmin: float,
         tmax: float,
-        regularization: float,
+        regularization: RegularizationSpec,
+        feature_regularization: np.ndarray,
+        bands: tuple[int, ...] | None,
         segment_length: int | None,
         overlap: float,
         n_fft: int | None,
+        spectral_method: SpectralMethod,
+        time_bandwidth: float,
+        n_tapers: int | None,
         window: None | str | tuple[str, float] | np.ndarray,
         detrend: None | str,
         trial_weights: None | str | Sequence[float],
@@ -833,6 +1357,9 @@ class FrequencyTRF:
             segment_length=segment_length,
             overlap=overlap,
             n_fft=n_fft,
+            spectral_method=spectral_method,
+            time_bandwidth=time_bandwidth,
+            n_tapers=n_tapers,
             window=window,
             detrend=detrend,
         )
@@ -842,6 +1369,8 @@ class FrequencyTRF:
             tmin=tmin,
             tmax=tmax,
             regularization=regularization,
+            feature_regularization=feature_regularization,
+            bands=bands,
             raw_trial_weights=_resolve_raw_trial_weights(y_trials, trial_weights),
         )
         self.window = _copy_value(window)
@@ -854,7 +1383,9 @@ class FrequencyTRF:
         fs: float,
         tmin: float,
         tmax: float,
-        regularization: float,
+        regularization: RegularizationSpec,
+        feature_regularization: np.ndarray,
+        bands: tuple[int, ...] | None,
         raw_trial_weights: np.ndarray | None,
         trial_indices: np.ndarray | None = None,
     ) -> None:
@@ -866,16 +1397,21 @@ class FrequencyTRF:
         transfer_function = _solve_transfer_function(
             cxx,
             cxy,
-            regularization=float(regularization),
+            feature_regularization=feature_regularization,
         )
 
         self.transfer_function = transfer_function
         self.frequencies = np.fft.rfftfreq(spectral_cache.n_fft, d=1.0 / float(fs))
         self.fs = float(fs)
-        self.regularization = float(regularization)
+        self.regularization = _copy_value(regularization)
+        self.bands = _copy_value(bands)
+        self.feature_regularization = np.asarray(feature_regularization, dtype=float).copy()
         self.segment_length = spectral_cache.segment_length
         self.n_fft = spectral_cache.n_fft
         self.overlap = spectral_cache.overlap
+        self.spectral_method = spectral_cache.spectral_method
+        self.time_bandwidth = spectral_cache.time_bandwidth
+        self.n_tapers = spectral_cache.n_tapers
         self.window = _copy_value(spectral_cache.window)
         self.detrend = spectral_cache.detrend
         self.tmin = float(tmin)
@@ -1045,6 +1581,211 @@ class FrequencyTRF:
             sharey=sharey,
         )
 
+    def transfer_function_at(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return one complex-valued transfer function slice.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select the predictor-target pair to inspect.
+
+        Returns
+        -------
+        frequencies, transfer_function:
+            Frequency vector in Hz and the matching complex transfer-function
+            values for the selected input/output pair.
+        """
+
+        if self.transfer_function is None or self.frequencies is None:
+            raise ValueError("Model must be trained before extracting a transfer function.")
+        if not 0 <= int(input_index) < self.transfer_function.shape[1]:
+            raise IndexError(f"input_index out of bounds: {input_index}")
+        if not 0 <= int(output_index) < self.transfer_function.shape[2]:
+            raise IndexError(f"output_index out of bounds: {output_index}")
+        return (
+            self.frequencies.copy(),
+            self.transfer_function[:, int(input_index), int(output_index)].copy(),
+        )
+
+    def plot_transfer_function(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+        kind: str = "both",
+        ax=None,
+        color: str | None = None,
+        phase_color: str | None = None,
+        linewidth: float = 2.0,
+        phase_unit: str = "rad",
+        title: str | None = None,
+    ):
+        """Plot magnitude and phase of one learned transfer function."""
+
+        from .plotting import plot_transfer_function
+
+        frequencies, transfer = self.transfer_function_at(
+            input_index=input_index,
+            output_index=output_index,
+        )
+        return plot_transfer_function(
+            frequencies=frequencies,
+            transfer_function=transfer,
+            kind=kind,
+            ax=ax,
+            color=color,
+            phase_color=phase_color,
+            linewidth=linewidth,
+            phase_unit=phase_unit,
+            title=title,
+        )
+
+    def diagnostics(
+        self,
+        *,
+        stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
+        response: np.ndarray | Sequence[np.ndarray] | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        trial_weights: None | str | Sequence[float] | object = _USE_STORED_TRIAL_WEIGHTS,
+    ) -> FrequencyTRFDiagnostics:
+        """Compute observed-vs-predicted spectral diagnostics.
+
+        This method reuses the fitted kernel to generate predictions for the
+        provided data, then compares predicted and observed targets in the
+        frequency domain. The returned diagnostics include:
+
+        - the learned complex transfer function
+        - predicted and observed output spectra
+        - matched predicted-vs-observed cross-spectra
+        - magnitude-squared coherence between prediction and target
+        """
+
+        if self.transfer_function is None or self.frequencies is None:
+            raise ValueError("Model must be trained before computing diagnostics.")
+        if self.segment_length is None or self.overlap is None or self.n_fft is None:
+            raise ValueError("Stored spectral settings are unavailable on this model.")
+
+        predictor_input = stimulus if self.direction == 1 else response
+        target_input = response if self.direction == 1 else stimulus
+        predictor_name = "stimulus" if self.direction == 1 else "response"
+        target_name = "response" if self.direction == 1 else "stimulus"
+        if predictor_input is None or target_input is None:
+            raise ValueError(
+                f"{predictor_name} and {target_name} are both required for diagnostics."
+            )
+
+        predictor_trials, _ = _coerce_trials(predictor_input, predictor_name)
+        target_trials, _ = _coerce_trials(target_input, target_name)
+        _check_trial_lengths(predictor_trials, target_trials)
+
+        predictions = self.predict(
+            stimulus=stimulus,
+            response=response,
+            tmin=tmin,
+            tmax=tmax,
+        )
+        if isinstance(predictions, tuple):
+            prediction_trials_raw = predictions[0]
+        else:
+            prediction_trials_raw = predictions
+        prediction_trials, _ = _coerce_trials(
+            prediction_trials_raw,
+            "prediction",
+        )
+
+        resolved_trial_weights = (
+            self.trial_weights if trial_weights is _USE_STORED_TRIAL_WEIGHTS else trial_weights
+        )
+        raw_trial_weights = _resolve_raw_trial_weights(target_trials, resolved_trial_weights)
+        prediction_cache = _build_spectral_cache(
+            prediction_trials,
+            target_trials,
+            segment_length=self.segment_length,
+            overlap=float(self.overlap),
+            n_fft=self.n_fft,
+            spectral_method=self.spectral_method,
+            time_bandwidth=float(self.time_bandwidth or 3.5),
+            n_tapers=self.n_tapers,
+            window=self.window,
+            detrend=self.detrend,
+        )
+        observed_cache = _build_spectral_cache(
+            target_trials,
+            target_trials,
+            segment_length=self.segment_length,
+            overlap=float(self.overlap),
+            n_fft=self.n_fft,
+            spectral_method=self.spectral_method,
+            time_bandwidth=float(self.time_bandwidth or 3.5),
+            n_tapers=self.n_tapers,
+            window=self.window,
+            detrend=self.detrend,
+        )
+        predicted_auto, predicted_vs_observed = _aggregate_cached_spectra(
+            prediction_cache,
+            raw_trial_weights=raw_trial_weights,
+        )
+        observed_auto, _ = _aggregate_cached_spectra(
+            observed_cache,
+            raw_trial_weights=raw_trial_weights,
+        )
+
+        predicted_spectrum = np.real(np.diagonal(predicted_auto, axis1=1, axis2=2))
+        observed_spectrum = np.real(np.diagonal(observed_auto, axis1=1, axis2=2))
+        cross_spectrum = np.diagonal(predicted_vs_observed, axis1=1, axis2=2)
+        denominator = np.clip(
+            predicted_spectrum * observed_spectrum,
+            np.finfo(float).eps,
+            None,
+        )
+        coherence = np.clip((np.abs(cross_spectrum) ** 2) / denominator, 0.0, 1.0)
+
+        return FrequencyTRFDiagnostics(
+            frequencies=self.frequencies.copy(),
+            transfer_function=self.transfer_function.copy(),
+            predicted_spectrum=predicted_spectrum,
+            observed_spectrum=observed_spectrum,
+            cross_spectrum=cross_spectrum,
+            coherence=coherence,
+        )
+
+    def plot_coherence(
+        self,
+        *,
+        stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
+        response: np.ndarray | Sequence[np.ndarray] | None = None,
+        diagnostics: FrequencyTRFDiagnostics | None = None,
+        output_index: int = 0,
+        ax=None,
+        color: str | None = None,
+        linewidth: float = 2.0,
+        title: str | None = None,
+    ):
+        """Plot magnitude-squared coherence between predictions and targets."""
+
+        from .plotting import plot_coherence
+
+        if diagnostics is None:
+            diagnostics = self.diagnostics(
+                stimulus=stimulus,
+                response=response,
+            )
+        return plot_coherence(
+            frequencies=diagnostics.frequencies,
+            coherence=diagnostics.coherence,
+            output_index=output_index,
+            ax=ax,
+            color=color,
+            linewidth=linewidth,
+            title=title,
+        )
+
     def bootstrap_interval_at(
         self,
         *,
@@ -1082,6 +1823,8 @@ class FrequencyTRF:
 
         if self.regularization is None or self.fs is None or self.tmin is None or self.tmax is None:
             raise ValueError("Model must be trained before bootstrapping.")
+        if self.feature_regularization is None:
+            raise ValueError("Stored feature regularization is unavailable on this model.")
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
         response_trials, _ = _coerce_trials(response, "response")
@@ -1096,6 +1839,9 @@ class FrequencyTRF:
             segment_length=self.segment_length,
             overlap=float(self.overlap),
             n_fft=self.n_fft,
+            spectral_method=self.spectral_method,
+            time_bandwidth=float(self.time_bandwidth or 3.5),
+            n_tapers=self.n_tapers,
             window=self.window,
             detrend=self.detrend,
         )
@@ -1104,7 +1850,7 @@ class FrequencyTRF:
             fs=float(self.fs),
             tmin=float(self.tmin),
             tmax=float(self.tmax),
-            regularization=float(self.regularization),
+            feature_regularization=self.feature_regularization,
             raw_trial_weights=_resolve_raw_trial_weights(y_trials, resolved_trial_weights),
             n_bootstraps=int(n_bootstraps),
             level=float(level),
@@ -1252,10 +1998,13 @@ class FrequencyTRF:
         fs: float,
         tmin: float,
         tmax: float,
-        regularization_values: np.ndarray,
+        feature_regularization_values: Sequence[np.ndarray],
         segment_length: int | None,
         overlap: float,
         n_fft: int | None,
+        spectral_method: SpectralMethod,
+        time_bandwidth: float,
+        n_tapers: int | None,
         window: None | str | tuple[str, float] | np.ndarray,
         detrend: None | str,
         k: int,
@@ -1280,7 +2029,7 @@ class FrequencyTRF:
         folds = [fold for fold in np.array_split(indices, n_folds) if len(fold) > 0]
 
         per_reg_scores = np.zeros(
-            (len(regularization_values), len(folds), y_trials[0].shape[1]),
+            (len(feature_regularization_values), len(folds), y_trials[0].shape[1]),
             dtype=float,
         )
         if spectral_cache is None:
@@ -1290,11 +2039,18 @@ class FrequencyTRF:
                 segment_length=segment_length,
                 overlap=overlap,
                 n_fft=n_fft,
+                spectral_method=spectral_method,
+                time_bandwidth=time_bandwidth,
+                n_tapers=n_tapers,
                 window=window,
                 detrend=detrend,
             )
 
-        for reg_index, reg_value in enumerate(regularization_values):
+        candidate_specs = self.regularization_candidates
+        if candidate_specs is None or len(candidate_specs) != len(feature_regularization_values):
+            raise RuntimeError("Regularization candidates are inconsistent with the CV search grid.")
+
+        for reg_index, feature_regularization in enumerate(feature_regularization_values):
             for fold_index, val_idx in enumerate(folds):
                 train_idx = np.setdiff1d(indices, val_idx, assume_unique=True)
                 candidate = FrequencyTRF(direction=self.direction, metric=self.metric)
@@ -1303,7 +2059,9 @@ class FrequencyTRF:
                     fs=fs,
                     tmin=tmin,
                     tmax=tmax,
-                    regularization=float(reg_value),
+                    regularization=candidate_specs[reg_index],
+                    feature_regularization=feature_regularization,
+                    bands=self.bands,
                     raw_trial_weights=raw_trial_weights,
                     trial_indices=train_idx,
                 )
@@ -1338,6 +2096,29 @@ class FrequencyTRF:
         with path.open("rb") as handle:
             loaded = pickle.load(handle)
         self.__dict__ = loaded.__dict__
+        if not hasattr(self, "metric_name"):
+            self.metric_name = getattr(self.metric, "__name__", None)
+        if not hasattr(self, "bands"):
+            self.bands = None
+        if not hasattr(self, "feature_regularization") or self.feature_regularization is None:
+            if self.weights is not None and isinstance(self.regularization, (float, np.floating)):
+                self.feature_regularization = np.full(
+                    self.weights.shape[0],
+                    float(self.regularization),
+                    dtype=float,
+                )
+            else:
+                self.feature_regularization = None
+        if not hasattr(self, "regularization_candidates"):
+            self.regularization_candidates = (
+                None if self.regularization is None else [_copy_value(self.regularization)]
+            )
+        if not hasattr(self, "spectral_method"):
+            self.spectral_method = "standard"
+        if not hasattr(self, "time_bandwidth"):
+            self.time_bandwidth = None
+        if not hasattr(self, "n_tapers"):
+            self.n_tapers = None
 
     def copy(self) -> "FrequencyTRF":
         """Return a copy of the estimator and all learned arrays."""
@@ -1378,6 +2159,10 @@ class FrequencyTRF:
         segment_length: int | None,
         overlap: float,
         n_fft: int | None,
+        spectral_method: SpectralMethod,
+        time_bandwidth: float,
+        n_tapers: int | None,
+        window: None | str | tuple[str, float] | np.ndarray,
         detrend: None | str,
     ) -> None:
         if fs <= 0:
@@ -1390,5 +2175,13 @@ class FrequencyTRF:
             raise ValueError("overlap must lie in [0, 1).")
         if n_fft is not None and int(n_fft) <= 0:
             raise ValueError("n_fft must be positive.")
+        resolved_method = _validate_spectral_method(spectral_method)
+        if resolved_method == "multitaper":
+            _resolve_multitaper_parameters(
+                time_bandwidth=float(time_bandwidth),
+                n_tapers=n_tapers,
+            )
+            if window is not None:
+                raise ValueError("window must be None when spectral_method='multitaper'.")
         if detrend not in (None, "constant", "linear"):
             raise ValueError("detrend must be None, 'constant', or 'linear'.")

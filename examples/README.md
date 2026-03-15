@@ -27,6 +27,10 @@ practical with `FrequencyTRF`:
   regularization.
 - `example_multifeature_multichannel.py`
   Multiple stimulus features, multiple response channels, forward model.
+- `example_banded_regularization.py`
+  Optional banded ridge search over grouped multifeature predictors.
+- `example_multitaper_diagnostics.py`
+  Optional multi-taper fit with `R^2`, transfer-function plots, and coherence diagnostics.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -39,6 +43,11 @@ practical with `FrequencyTRF`:
 Each example is intentionally a plain Python script showing the API calls,
 learned attributes, and one corresponding figure. Running a script prints the
 relevant `FrequencyTRF` attributes and saves a figure under `artifacts/examples/`.
+They are meant to be read alongside the main README: each script follows the
+same pattern of `train(...)`, attribute inspection, `predict(...)`, and
+plotting, but focuses on one concrete use case. The optional features are
+covered with dedicated examples rather than changing the baseline examples into
+advanced-only workflows.
 
 Example commands:
 
@@ -46,6 +55,8 @@ Example commands:
 python examples/example_single_trial_single_channel.py
 python examples/example_multi_trial_single_channel.py
 python examples/example_multifeature_multichannel.py
+python examples/example_banded_regularization.py
+python examples/example_multitaper_diagnostics.py
 python examples/example_backward_decoding.py
 python examples/example_bootstrap_confidence_interval.py
 python examples/example_trial_weighting.py

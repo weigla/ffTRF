@@ -327,6 +327,64 @@ def build_multifeature_multichannel_dataset(
     )
 
 
+def build_banded_regularization_dataset(
+    *,
+    fs: float = 1_000.0,
+    n_trials: int = 6,
+    n_samples: int = 6_000,
+    tmin: float = 0.0,
+    tmax: float = 0.220,
+    noise_scale: float = 0.07,
+    seed: int = 5,
+) -> SimulatedTRFDataset:
+    """Create a two-feature dataset suited to banded regularization demos."""
+
+    rng = np.random.default_rng(seed)
+    envelope_kernel, times = gaussian_kernel(
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        bumps=[(0.045, 0.85, 0.014), (0.115, -0.32, 0.022)],
+    )
+    onset_kernel, _ = gaussian_kernel(
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        bumps=[(0.014, 0.42, 0.006), (0.030, 0.18, 0.008)],
+    )
+    true_weights = np.stack([envelope_kernel, onset_kernel], axis=0)[:, :, np.newaxis]
+
+    stimulus = []
+    response = []
+    for _ in range(n_trials):
+        envelope = make_envelope(n_samples=n_samples, fs=fs, rng=rng)
+        onset = make_onset_feature(envelope)
+        onset += 0.35 * rng.standard_normal(n_samples)
+        onset /= np.clip(onset.std(), np.finfo(float).eps, None)
+        trial_stimulus = np.column_stack([envelope, onset])
+        trial_response = simulate_response(
+            trial_stimulus,
+            true_weights,
+            fs=fs,
+            tmin=tmin,
+            noise_scale=noise_scale,
+            rng=rng,
+        )
+        stimulus.append(trial_stimulus)
+        response.append(trial_response)
+
+    return SimulatedTRFDataset(
+        stimulus=stimulus,
+        response=response,
+        true_weights=true_weights,
+        times=times,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        description="Two-feature forward model for banded regularization.",
+    )
+
+
 def build_backward_decoding_dataset(
     *,
     fs: float = 500.0,

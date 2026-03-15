@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF, inverse_variance_weights
+from fftrf import FrequencyTRF, inverse_variance_weights, r2_score
 
 from simulated_data import (
     build_multi_trial_single_channel_dataset,
@@ -42,12 +42,14 @@ def main() -> None:
         trial_weights=inverse_variance_weights(train_response),
     )
     prediction, held_out_score = model.predict(stimulus=test_stimulus, response=test_response)
+    held_out_r2 = float(r2_score(test_response, prediction).mean())
     kernel_corr = np.corrcoef(dataset.true_weights[0, :, 0], model.weights[0, :, 0])[0, 1]
 
     print("Example: multiple trials, single feature, single output")
     print(f"  description: {dataset.description}")
     print(f"  selected lambda: {float(model.regularization):.6f}")
     print(f"  held-out correlation: {float(held_out_score):.4f}")
+    print(f"  held-out R^2: {held_out_r2:.4f}")
     print(f"  kernel correlation: {float(kernel_corr):.4f}")
     print(f"  segment_length: {model.segment_length}")
     print(f"  n_fft: {model.n_fft}")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import FrequencyTRF, r2_score
 
 from simulated_data import (
     build_single_trial_single_channel_dataset,
@@ -37,11 +37,13 @@ def main() -> None:
         window="hann",
     )
     prediction, score = model.predict(stimulus=stimulus, response=response)
+    r2 = float(r2_score(response, prediction).mean())
     kernel_corr = np.corrcoef(dataset.true_weights[0, :, 0], model.weights[0, :, 0])[0, 1]
 
     print("Example: single trial, single feature, single output")
     print(f"  description: {dataset.description}")
     print(f"  prediction correlation: {float(score):.4f}")
+    print(f"  prediction R^2: {r2:.4f}")
     print(f"  kernel correlation: {float(kernel_corr):.4f}")
     print(f"  regularization: {model.regularization}")
     print(f"  segment_length: {model.segment_length}")

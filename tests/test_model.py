@@ -3,12 +3,21 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+from typing import Sequence
 
 import fftrf.model as model_module
 import numpy as np
 import pytest
 
-from fftrf import FrequencyTRF, half_wave_rectify, inverse_variance_weights, resample_signal
+from fftrf import (
+    FrequencyTRF,
+    available_metrics,
+    explained_variance_score,
+    half_wave_rectify,
+    inverse_variance_weights,
+    r2_score,
+    resample_signal,
+)
 
 
 def _simulate_trials(
@@ -24,6 +33,27 @@ def _simulate_trials(
     for _ in range(n_trials):
         x = rng.standard_normal((n_samples, 1))
         y = np.convolve(x[:, 0], kernel, mode="full")[:n_samples]
+        y = y + noise_scale * rng.standard_normal(n_samples)
+        stimulus.append(x)
+        response.append(y[:, np.newaxis])
+    return stimulus, response
+
+
+def _simulate_multifeature_trials(
+    *,
+    rng: np.random.Generator,
+    n_trials: int,
+    n_samples: int,
+    kernels: Sequence[np.ndarray],
+    noise_scale: float,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    stimulus = []
+    response = []
+    for _ in range(n_trials):
+        x = rng.standard_normal((n_samples, len(kernels)))
+        y = np.zeros(n_samples, dtype=float)
+        for feature_index, kernel in enumerate(kernels):
+            y += np.convolve(x[:, feature_index], kernel, mode="full")[:n_samples]
         y = y + noise_scale * rng.standard_normal(n_samples)
         stimulus.append(x)
         response.append(y[:, np.newaxis])
@@ -142,6 +172,183 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
 
     assert scores.shape == (6,)
     assert call_count == 1
+
+
+def test_builtin_metric_helpers_and_registry() -> None:
+    y_true = np.array([[0.0], [1.0], [2.0], [3.0]])
+    y_pred = np.array([[0.0], [0.8], [2.2], [3.1]])
+
+    assert "r2" in available_metrics()
+    assert "explained_variance" in available_metrics()
+    assert float(r2_score(y_true, y_pred)[0]) > 0.95
+    assert float(explained_variance_score(y_true, y_pred)[0]) > 0.95
+
+
+def test_banded_regularization_matches_scalar_ridge_for_equal_penalties() -> None:
+    rng = np.random.default_rng(18)
+    fs = 1_000
+    kernels = [
+        np.array([0.0, 0.8, -0.25, 0.1]),
+        np.array([0.0, 0.2, 0.0, -0.05]),
+    ]
+    stimulus, response = _simulate_multifeature_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernels=kernels,
+        noise_scale=0.03,
+    )
+
+    scalar_model = FrequencyTRF(direction=1)
+    scalar_model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.004,
+        regularization=1e-3,
+        window=None,
+    )
+
+    banded_model = FrequencyTRF(direction=1)
+    banded_model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.004,
+        regularization=[(1e-3, 1e-3)],
+        bands=[1, 1],
+        window=None,
+    )
+
+    assert banded_model.regularization == (1e-3, 1e-3)
+    assert np.allclose(banded_model.feature_regularization, [1e-3, 1e-3])
+    assert np.allclose(scalar_model.weights, banded_model.weights, rtol=1e-7, atol=1e-9)
+
+
+def test_banded_regularization_cross_validation_expands_cartesian_grid() -> None:
+    rng = np.random.default_rng(23)
+    fs = 1_000
+    kernels = [
+        np.array([0.0, 0.9, -0.3, 0.15]),
+        np.array([0.0, 0.05, 0.02, 0.0]),
+    ]
+    stimulus, response = _simulate_multifeature_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernels=kernels,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    scores = model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.004,
+        regularization=[1e-4, 1e-1],
+        bands=[1, 1],
+        k=3,
+        segment_length=512,
+        overlap=0.5,
+    )
+
+    assert scores.shape == (4,)
+    assert model.regularization_candidates == [
+        (1e-4, 1e-4),
+        (1e-4, 1e-1),
+        (1e-1, 1e-4),
+        (1e-1, 1e-1),
+    ]
+    assert isinstance(model.regularization, tuple)
+    assert len(model.regularization) == 2
+    assert model.feature_regularization.shape == (2,)
+
+
+def test_frequency_trf_supports_named_metric_and_multitaper() -> None:
+    rng = np.random.default_rng(24)
+    fs = 1_000
+    kernel = np.zeros(35)
+    kernel[3] = 0.9
+    kernel[9] = -0.35
+    kernel[16] = 0.15
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=8,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    model = FrequencyTRF(direction=1, metric="r2")
+    model.train(
+        stimulus=stimulus[:-1],
+        response=response[:-1],
+        fs=fs,
+        tmin=0.0,
+        tmax=0.035,
+        regularization=np.logspace(-5, -1, 5),
+        segment_length=512,
+        overlap=0.5,
+        spectral_method="multitaper",
+        time_bandwidth=3.5,
+        n_tapers=4,
+        k=4,
+    )
+
+    _, score = model.predict(stimulus=stimulus[-1], response=response[-1])
+    assert model.metric_name == "r2"
+    assert model.spectral_method == "multitaper"
+    assert model.n_tapers == 4
+    assert model.time_bandwidth == pytest.approx(3.5)
+    assert score > 0.75
+
+
+def test_frequency_trf_diagnostics_returns_coherence() -> None:
+    rng = np.random.default_rng(25)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[4] = 1.0
+    kernel[10] = -0.42
+    kernel[17] = 0.18
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus[:-1],
+        response=response[:-1],
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        spectral_method="multitaper",
+        time_bandwidth=3.5,
+        n_tapers=4,
+    )
+
+    diagnostics = model.diagnostics(
+        stimulus=stimulus[-1],
+        response=response[-1],
+    )
+    assert diagnostics.transfer_function.shape == model.transfer_function.shape
+    assert diagnostics.predicted_spectrum.shape == (model.frequencies.shape[0], 1)
+    assert diagnostics.observed_spectrum.shape == (model.frequencies.shape[0], 1)
+    assert diagnostics.coherence.shape == (model.frequencies.shape[0], 1)
+    assert np.all((diagnostics.coherence >= 0.0) & (diagnostics.coherence <= 1.0))
+    assert float(np.mean(diagnostics.coherence[:30, 0])) > 0.7
 
 
 def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
@@ -386,6 +593,49 @@ def test_frequency_trf_plot_grid_if_matplotlib_available() -> None:
     assert axes[1, 0].get_xlabel() == "Lag (ms)"
     assert "Feature 1" in axes[0, 0].get_title()
     plt.close(fig)
+
+
+def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(26)
+    fs = 1_000
+    kernel = np.zeros(24)
+    kernel[3] = 0.85
+    kernel[7] = -0.22
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=5,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus[:-1],
+        response=response[:-1],
+        fs=fs,
+        tmin=0.0,
+        tmax=0.024,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        spectral_method="multitaper",
+        time_bandwidth=3.5,
+        n_tapers=4,
+    )
+
+    transfer_fig, transfer_axes = model.plot_transfer_function(phase_unit="deg")
+    assert transfer_axes.shape == (2,)
+    assert transfer_axes[1].get_xlabel() == "Frequency (Hz)"
+    plt.close(transfer_fig)
+
+    diagnostics = model.diagnostics(stimulus=stimulus[-1], response=response[-1])
+    coherence_fig, coherence_ax = model.plot_coherence(diagnostics=diagnostics)
+    assert coherence_ax.get_ylabel() == "Coherence"
+    plt.close(coherence_fig)
 
 
 def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:
