@@ -19,7 +19,9 @@ from dataclasses import dataclass
 from itertools import product
 import pickle
 from pathlib import Path
+import sys
 from typing import Callable, Iterable, Sequence
+import warnings
 
 import numpy as np
 from scipy.fft import next_fast_len
@@ -293,6 +295,195 @@ def _coerce_nonnegative_float(value: float, *, name: str) -> float:
     return coerced
 
 
+def _resolve_segment_length(
+    *,
+    fs: float,
+    segment_length: int | None,
+    segment_duration: float | None,
+) -> int | None:
+    if segment_length is not None and segment_duration is not None:
+        raise ValueError("Provide either segment_length or segment_duration, not both.")
+    if segment_duration is None:
+        return None if segment_length is None else int(segment_length)
+
+    duration = float(segment_duration)
+    if not np.isfinite(duration) or duration <= 0.0:
+        raise ValueError("segment_duration must be finite and positive.")
+    return max(1, int(round(duration * float(fs))))
+
+
+def _resolve_k_folds(k: int | str) -> int:
+    if isinstance(k, str):
+        resolved = k.strip().lower()
+        if resolved in {"loo", "leave-one-out", "leave_one_out"}:
+            return -1
+        raise ValueError("k must be an integer or one of {'loo', 'leave-one-out'}.")
+    return int(k)
+
+
+def _warn_if_cv_arguments_are_unused(
+    *,
+    n_candidates: int,
+    k: int | str,
+    average: bool | Sequence[int],
+    seed: int | None,
+    show_progress: bool,
+) -> None:
+    if n_candidates != 1:
+        return
+
+    unused: list[str] = []
+    if isinstance(k, str) or int(k) != -1:
+        unused.append("k")
+    if average is not True:
+        unused.append("average")
+    if seed is not None:
+        unused.append("seed")
+    if bool(show_progress):
+        unused.append("show_progress")
+
+    if unused:
+        formatted = ", ".join(unused)
+        warnings.warn(
+            f"{formatted} {'is' if len(unused) == 1 else 'are'} ignored because "
+            "cross-validation requires more than one regularization candidate.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+
+class _SimpleProgressBar:
+    """Minimal stderr progress indicator used for optional CV feedback."""
+
+    def __init__(self, *, total: int, label: str) -> None:
+        self.total = max(1, int(total))
+        self.label = str(label)
+        self.current = 0
+        self.stream = sys.stderr
+        self.use_carriage = bool(getattr(self.stream, "isatty", lambda: False)())
+        self._emit()
+
+    def update(self, step: int = 1) -> None:
+        self.current = min(self.total, self.current + int(step))
+        self._emit()
+
+    def close(self) -> None:
+        if self.use_carriage:
+            self.stream.write("\n")
+            self.stream.flush()
+        elif self.current < self.total:
+            self.current = self.total
+            self._emit()
+
+    def _emit(self) -> None:
+        fraction = self.current / self.total
+        width = 20
+        filled = min(width, int(round(fraction * width)))
+        bar = f"[{'#' * filled}{'-' * (width - filled)}] {self.current}/{self.total}"
+        if self.use_carriage:
+            self.stream.write(f"\r{self.label} {bar}")
+        else:
+            if self.current == 0 or self.current == self.total:
+                self.stream.write(f"{self.label} {bar}\n")
+        self.stream.flush()
+
+
+def _resolve_frequency_scale(scale: str) -> str:
+    resolved = str(scale).strip().lower()
+    if resolved not in {"linear", "log"}:
+        raise ValueError("scale must be either 'linear' or 'log'.")
+    return resolved
+
+
+def _resolve_frequency_weight_value_mode(value_mode: str) -> str:
+    resolved = str(value_mode).strip().lower()
+    if resolved not in {"real", "magnitude", "power"}:
+        raise ValueError("value_mode must be 'real', 'magnitude', or 'power'.")
+    return resolved
+
+
+def _smallest_positive_frequency(frequencies: np.ndarray) -> float | None:
+    positive = np.asarray(frequencies, dtype=float)
+    positive = positive[positive > 0.0]
+    if positive.size == 0:
+        return None
+    return float(positive[0])
+
+
+def _build_frequency_filterbank(
+    frequencies: np.ndarray,
+    *,
+    n_bands: int,
+    fmin: float | None,
+    fmax: float | None,
+    scale: str,
+    bandwidth: float | None,
+) -> tuple[np.ndarray, np.ndarray, str, float]:
+    frequencies = np.asarray(frequencies, dtype=float)
+    if frequencies.ndim != 1 or frequencies.size == 0:
+        raise ValueError("frequencies must be a non-empty 1D array.")
+
+    resolved_scale = _resolve_frequency_scale(scale)
+    n_bands = int(n_bands)
+    if n_bands <= 0:
+        raise ValueError("n_bands must be a positive integer.")
+
+    nyquist = float(frequencies[-1])
+    if fmin is None:
+        if resolved_scale == "linear":
+            fmin = 0.0
+        else:
+            fmin = _smallest_positive_frequency(frequencies)
+            if fmin is None:
+                raise ValueError(
+                    "Log-spaced frequency bands require at least one positive frequency bin."
+                )
+    if fmax is None:
+        fmax = nyquist
+
+    fmin = _coerce_nonnegative_float(float(fmin), name="fmin")
+    fmax = _coerce_nonnegative_float(float(fmax), name="fmax")
+    if resolved_scale == "log" and fmin <= 0.0:
+        raise ValueError("fmin must be positive when scale='log'.")
+    if fmax <= fmin:
+        raise ValueError("fmax must be greater than fmin.")
+    if fmax > nyquist + np.finfo(float).eps:
+        raise ValueError("fmax cannot exceed the fitted Nyquist frequency.")
+
+    if n_bands == 1:
+        band_centers = np.array([(fmin + fmax) / 2.0], dtype=float)
+    elif resolved_scale == "linear":
+        band_centers = np.linspace(fmin, fmax, n_bands, dtype=float)
+    else:
+        band_centers = np.geomspace(fmin, fmax, n_bands, dtype=float)
+
+    if bandwidth is None:
+        if n_bands == 1:
+            positive_step = _smallest_positive_frequency(np.diff(frequencies))
+            inferred = max(fmax - fmin, positive_step or max(fmax, 1.0))
+        else:
+            inferred = float(np.median(np.diff(band_centers)))
+        bandwidth = inferred
+    bandwidth = float(bandwidth)
+    if not np.isfinite(bandwidth) or bandwidth <= 0.0:
+        raise ValueError("bandwidth must be finite and positive.")
+
+    active = (frequencies >= fmin) & (frequencies <= fmax)
+    filters = np.zeros((frequencies.shape[0], n_bands), dtype=float)
+    if n_bands == 1:
+        filters[active, 0] = 1.0
+        return band_centers, filters, resolved_scale, bandwidth
+
+    scaled_distance = (frequencies[:, np.newaxis] - band_centers[np.newaxis, :]) / bandwidth
+    filters = np.exp(-0.5 * scaled_distance**2)
+    filters[~active, :] = 0.0
+
+    row_sums = filters.sum(axis=1, keepdims=True)
+    valid_rows = active & (row_sums[:, 0] > np.finfo(float).eps)
+    filters[valid_rows, :] /= row_sums[valid_rows, :]
+    return band_centers, filters, resolved_scale, bandwidth
+
+
 def _is_scalar_like(value: object) -> bool:
     try:
         return np.asarray(value).ndim == 0
@@ -535,6 +726,60 @@ class TransferFunctionComponents:
     phase: np.ndarray
     phase_unit: str
     group_delay: np.ndarray
+
+
+@dataclass(slots=True)
+class FrequencyResolvedWeights:
+    """Frequency-resolved time-domain view of a fitted transfer function.
+
+    Attributes
+    ----------
+    frequencies:
+        Original frequency vector of the fitted transfer function in Hz.
+    band_centers:
+        Center frequency of each analysis band in Hz.
+    filters:
+        Frequency-domain filter bank used to partition the transfer function.
+        Shape is ``(n_frequencies, n_bands)``.
+    times:
+        Lag vector in seconds corresponding to the third axis of
+        :attr:`weights`.
+    weights:
+        Frequency-resolved kernel tensor with shape
+        ``(n_inputs, n_bands, n_lags, n_outputs)``.
+    scale:
+        Spacing used for :attr:`band_centers`, either ``"linear"`` or
+        ``"log"``.
+    value_mode:
+        Representation stored in :attr:`weights`. ``"real"`` preserves the
+        signed band-limited kernels, ``"magnitude"`` stores their absolute
+        value, and ``"power"`` stores squared magnitude.
+    bandwidth:
+        Gaussian filter width in Hz used for the analysis bands.
+    """
+
+    frequencies: np.ndarray
+    band_centers: np.ndarray
+    filters: np.ndarray
+    times: np.ndarray
+    weights: np.ndarray
+    scale: str
+    value_mode: str
+    bandwidth: float
+
+    def at(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+    ) -> np.ndarray:
+        """Return one frequency-by-lag map from the resolved kernel bank."""
+
+        if not 0 <= int(input_index) < self.weights.shape[0]:
+            raise IndexError(f"input_index out of bounds: {input_index}")
+        if not 0 <= int(output_index) < self.weights.shape[3]:
+            raise IndexError(f"output_index out of bounds: {output_index}")
+        return self.weights[int(input_index), :, :, int(output_index)].copy()
 
 
 def _resolve_raw_trial_weights(
@@ -990,6 +1235,46 @@ def _shifted_convolution(
     return prediction
 
 
+def _predict_trials_from_weights(
+    predictor_trials: Sequence[np.ndarray],
+    *,
+    weights: np.ndarray,
+    lag_start: int,
+) -> list[np.ndarray]:
+    weights = np.asarray(weights, dtype=float)
+    if weights.ndim != 3:
+        raise ValueError("weights must have shape (n_inputs, n_lags, n_outputs).")
+
+    n_inputs, _, n_outputs = weights.shape
+    kernel = np.transpose(weights, (1, 0, 2))
+    predictions: list[np.ndarray] = []
+    for predictor_trial in predictor_trials:
+        prediction = np.zeros((predictor_trial.shape[0], n_outputs), dtype=float)
+        for input_index in range(n_inputs):
+            for output_index in range(n_outputs):
+                prediction[:, output_index] += _shifted_convolution(
+                    predictor_trial[:, input_index],
+                    kernel[:, input_index, output_index],
+                    lag_start=lag_start,
+                    out_length=predictor_trial.shape[0],
+                )
+        predictions.append(prediction)
+    return predictions
+
+
+def _score_prediction_trials(
+    metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    target_trials: Sequence[np.ndarray],
+    prediction_trials: Sequence[np.ndarray],
+) -> np.ndarray:
+    if len(target_trials) != len(prediction_trials):
+        raise ValueError("target_trials and prediction_trials must have the same length.")
+    return np.mean(
+        np.vstack([metric(target, prediction) for target, prediction in zip(target_trials, prediction_trials)]),
+        axis=0,
+    )
+
+
 class FrequencyTRF:
     """
     Estimate stimulus-response mappings in the frequency domain.
@@ -1002,6 +1287,8 @@ class FrequencyTRF:
     - call :meth:`score` to evaluate predictions
     - call :meth:`plot` to visualize the fitted kernel
     - call :meth:`plot_grid` to visualize all input/output kernels at once
+    - call :meth:`frequency_resolved_weights` or
+      :meth:`plot_frequency_resolved_weights` for a spectrogram-like kernel view
     - call :meth:`plot_transfer_function` to inspect magnitude, phase, or group delay
     - call :meth:`cross_spectral_diagnostics`, :meth:`plot_coherence`, and
       :meth:`plot_cross_spectrum` for spectral prediction diagnostics
@@ -1054,6 +1341,9 @@ class FrequencyTRF:
         tested values.
     fs:
         Sampling rate used during fitting.
+    segment_duration:
+        Segment length expressed in seconds. This mirrors :attr:`segment_length`
+        in a more user-friendly unit.
     bootstrap_interval:
         Optional trial-bootstrap confidence interval with shape
         ``(2, n_inputs, n_lags, n_outputs)``.
@@ -1100,6 +1390,7 @@ class FrequencyTRF:
         self.feature_regularization: np.ndarray | None = None
         self.regularization_candidates: list[RegularizationSpec] | None = None
         self.segment_length: int | None = None
+        self.segment_duration: float | None = None
         self.n_fft: int | None = None
         self.overlap: float | None = None
         self.spectral_method: SpectralMethod = "standard"
@@ -1125,6 +1416,7 @@ class FrequencyTRF:
         *,
         bands: None | Sequence[int] = None,
         segment_length: int | None = None,
+        segment_duration: float | None = None,
         overlap: float = 0.0,
         n_fft: int | None = None,
         spectral_method: SpectralMethod = "standard",
@@ -1132,9 +1424,10 @@ class FrequencyTRF:
         n_tapers: int | None = None,
         window: None | str | tuple[str, float] | np.ndarray = None,
         detrend: None | str = "constant",
-        k: int = -1,
+        k: int | str = -1,
         average: bool | Sequence[int] = True,
         seed: int | None = None,
+        show_progress: bool = False,
         trial_weights: None | str | Sequence[float] = None,
         bootstrap_samples: int = 0,
         bootstrap_level: float = 0.95,
@@ -1179,6 +1472,10 @@ class FrequencyTRF:
         segment_length:
             Segment size used to estimate cross-spectra. If ``None``, each trial
             is treated as a single segment.
+        segment_duration:
+            Segment duration in seconds. This is a user-friendly alternative to
+            ``segment_length`` for workflows that prefer time-based settings.
+            Provide either ``segment_length`` or ``segment_duration``, not both.
         overlap:
             Fractional overlap between neighboring segments. Must lie in
             ``[0, 1)``.
@@ -1207,7 +1504,7 @@ class FrequencyTRF:
             Optional detrending passed to :func:`scipy.signal.detrend`.
         k:
             Number of cross-validation folds when multiple regularization values
-            are supplied. ``-1`` means leave-one-out over trials.
+            are supplied. ``-1`` or ``"loo"`` means leave-one-out over trials.
         average:
             How cross-validation scores should be reduced across output
             channels/features. ``True`` returns a single score per regularization
@@ -1215,6 +1512,9 @@ class FrequencyTRF:
             indices averages only over the selected outputs.
         seed:
             Optional random seed for shuffling trial order before creating folds.
+        show_progress:
+            If ``True`` and cross-validation is active, print a small progress
+            indicator to standard error while fold/candidate evaluations run.
         trial_weights:
             Optional trial weights. Use ``"inverse_variance"`` for
             inverse-variance weighting or pass an explicit vector with one
@@ -1250,6 +1550,13 @@ class FrequencyTRF:
         response_trials, _ = _coerce_trials(response, "response")
         _check_trial_lengths(stimulus_trials, response_trials)
 
+        segment_length = _resolve_segment_length(
+            fs=fs,
+            segment_length=segment_length,
+            segment_duration=segment_duration,
+        )
+        k = _resolve_k_folds(k)
+
         x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
         self._validate_dimensions(x_trials, y_trials)
         self._validate_fit_arguments(
@@ -1274,6 +1581,13 @@ class FrequencyTRF:
             regularization,
             n_inputs=x_trials[0].shape[1],
             bands=resolved_bands,
+        )
+        _warn_if_cv_arguments_are_unused(
+            n_candidates=len(feature_regularization_values),
+            k=k,
+            average=average,
+            seed=seed,
+            show_progress=show_progress,
         )
         raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
         self.trial_weights = _copy_value(trial_weights)
@@ -1365,6 +1679,7 @@ class FrequencyTRF:
             k=k,
             seed=seed,
             average=average,
+            show_progress=show_progress,
             raw_trial_weights=raw_trial_weights,
             spectral_cache=spectral_cache,
         )
@@ -1412,14 +1727,16 @@ class FrequencyTRF:
         *,
         bands: None | Sequence[int] = None,
         segment_length: int | None = None,
+        segment_duration: float | None = None,
         overlap: float = 0.0,
         n_fft: int | None = None,
         time_bandwidth: float = 3.5,
         n_tapers: int | None = None,
         detrend: None | str = "constant",
-        k: int = -1,
+        k: int | str = -1,
         average: bool | Sequence[int] = True,
         seed: int | None = None,
+        show_progress: bool = False,
         trial_weights: None | str | Sequence[float] = None,
         bootstrap_samples: int = 0,
         bootstrap_level: float = 0.95,
@@ -1441,6 +1758,7 @@ class FrequencyTRF:
             regularization=regularization,
             bands=bands,
             segment_length=segment_length,
+            segment_duration=segment_duration,
             overlap=overlap,
             n_fft=n_fft,
             spectral_method="multitaper",
@@ -1451,6 +1769,7 @@ class FrequencyTRF:
             k=k,
             average=average,
             seed=seed,
+            show_progress=show_progress,
             trial_weights=trial_weights,
             bootstrap_samples=bootstrap_samples,
             bootstrap_level=bootstrap_level,
@@ -1534,6 +1853,7 @@ class FrequencyTRF:
         self.bands = _copy_value(bands)
         self.feature_regularization = np.asarray(feature_regularization, dtype=float).copy()
         self.segment_length = spectral_cache.segment_length
+        self.segment_duration = spectral_cache.segment_length / float(fs)
         self.n_fft = spectral_cache.n_fft
         self.overlap = spectral_cache.overlap
         self.spectral_method = spectral_cache.spectral_method
@@ -1706,6 +2026,166 @@ class FrequencyTRF:
             input_labels=input_labels,
             output_labels=output_labels,
             sharey=sharey,
+        )
+
+    def frequency_resolved_weights(
+        self,
+        *,
+        n_bands: int = 24,
+        fmin: float | None = None,
+        fmax: float | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        scale: str = "linear",
+        bandwidth: float | None = None,
+        value_mode: str = "real",
+    ) -> FrequencyResolvedWeights:
+        """Return a spectrotemporal decomposition of the fitted kernel.
+
+        The learned transfer function is partitioned into smooth frequency
+        bands, and each band is transformed back into the lag domain. This
+        yields a frequency-by-lag representation that can be plotted like a
+        spectrogram. In the default ``value_mode="real"`` setting, summing the
+        returned weights across the band axis reconstructs the ordinary
+        time-domain kernel, provided the full fitted frequency range is used.
+
+        Parameters
+        ----------
+        n_bands:
+            Number of analysis bands used for the decomposition.
+        fmin, fmax:
+            Frequency range in Hz to analyze. The default covers the full
+            fitted range from DC to Nyquist.
+        tmin, tmax:
+            Optional lag window to extract. If omitted, the fitted lag window is
+            reused.
+        scale:
+            Spacing of the band centers. Use ``"linear"`` for evenly spaced
+            bands or ``"log"`` for logarithmic spacing.
+        bandwidth:
+            Gaussian band width in Hz. When omitted, it is inferred from the
+            spacing between neighboring band centers.
+        value_mode:
+            ``"real"`` returns the signed band-limited kernels,
+            ``"magnitude"`` returns their absolute value, and ``"power"``
+            returns squared magnitude.
+
+        Returns
+        -------
+        FrequencyResolvedWeights
+            Container holding the filter bank, lag axis, and resolved kernel
+            tensor with shape ``(n_inputs, n_bands, n_lags, n_outputs)``.
+        """
+
+        if self.transfer_function is None or self.frequencies is None:
+            raise ValueError("Model must be trained before resolving weights by frequency.")
+        if self.n_fft is None or self.fs is None:
+            raise ValueError("Stored FFT settings are unavailable on this model.")
+
+        tmin = self.tmin if tmin is None else float(tmin)
+        tmax = self.tmax if tmax is None else float(tmax)
+        if tmin is None or tmax is None:
+            raise ValueError("tmin and tmax must be defined.")
+
+        band_centers, filters, resolved_scale, resolved_bandwidth = _build_frequency_filterbank(
+            self.frequencies,
+            n_bands=n_bands,
+            fmin=fmin,
+            fmax=fmax,
+            scale=scale,
+            bandwidth=bandwidth,
+        )
+        resolved_value_mode = _resolve_frequency_weight_value_mode(value_mode)
+
+        band_transfer = (
+            self.transfer_function[:, :, :, np.newaxis]
+            * filters[:, np.newaxis, np.newaxis, :]
+        )
+        full_kernel = np.fft.irfft(
+            band_transfer,
+            n=int(self.n_fft),
+            axis=0,
+        ).real
+
+        lag_start = int(round(float(tmin) * float(self.fs)))
+        lag_stop = int(round(float(tmax) * float(self.fs)))
+        if lag_stop <= lag_start:
+            raise ValueError("tmax must be greater than tmin.")
+        lag_indices = np.arange(lag_start, lag_stop, dtype=int)
+        kernel = full_kernel[np.mod(lag_indices, int(self.n_fft)), :, :, :]
+        kernel = np.transpose(kernel, (1, 3, 0, 2))
+
+        if resolved_value_mode == "magnitude":
+            kernel = np.abs(kernel)
+        elif resolved_value_mode == "power":
+            kernel = kernel**2
+
+        return FrequencyResolvedWeights(
+            frequencies=self.frequencies.copy(),
+            band_centers=band_centers,
+            filters=filters,
+            times=(lag_indices / float(self.fs)),
+            weights=kernel,
+            scale=resolved_scale,
+            value_mode=resolved_value_mode,
+            bandwidth=resolved_bandwidth,
+        )
+
+    def plot_frequency_resolved_weights(
+        self,
+        *,
+        resolved: FrequencyResolvedWeights | None = None,
+        input_index: int = 0,
+        output_index: int = 0,
+        n_bands: int = 24,
+        fmin: float | None = None,
+        fmax: float | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        scale: str = "linear",
+        bandwidth: float | None = None,
+        value_mode: str = "real",
+        ax=None,
+        time_unit: str = "ms",
+        cmap: str | None = None,
+        colorbar: bool = True,
+        title: str | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
+        frequency_axis_scale: str | None = None,
+    ):
+        """Plot one frequency-resolved kernel map as a heatmap."""
+
+        from .plotting import plot_frequency_resolved_weights
+
+        if resolved is None:
+            resolved = self.frequency_resolved_weights(
+                n_bands=n_bands,
+                fmin=fmin,
+                fmax=fmax,
+                tmin=tmin,
+                tmax=tmax,
+                scale=scale,
+                bandwidth=bandwidth,
+                value_mode=value_mode,
+            )
+
+        return plot_frequency_resolved_weights(
+            weights=resolved.weights,
+            times=resolved.times,
+            band_centers=resolved.band_centers,
+            input_index=input_index,
+            output_index=output_index,
+            value_mode=resolved.value_mode,
+            bandwidth=resolved.bandwidth,
+            ax=ax,
+            time_unit=time_unit,
+            cmap=cmap,
+            colorbar=colorbar,
+            title=title,
+            vmin=vmin,
+            vmax=vmax,
+            frequency_axis_scale=resolved.scale if frequency_axis_scale is None else frequency_axis_scale,
         )
 
     def transfer_function_at(
@@ -2150,23 +2630,11 @@ class FrequencyTRF:
 
         weights, times = self.to_impulse_response(tmin=tmin, tmax=tmax)
         lag_start = int(round(times[0] * self.fs))
-        kernel = np.transpose(weights, (1, 0, 2))
-
-        predictions: list[np.ndarray] = []
-        metrics = []
-        for index, predictor_trial in enumerate(predictor_trials):
-            prediction = np.zeros((predictor_trial.shape[0], n_outputs), dtype=float)
-            for input_index in range(n_inputs):
-                for output_index in range(n_outputs):
-                    prediction[:, output_index] += _shifted_convolution(
-                        predictor_trial[:, input_index],
-                        kernel[:, input_index, output_index],
-                        lag_start=lag_start,
-                        out_length=predictor_trial.shape[0],
-                    )
-            predictions.append(prediction)
-            if target_trials is not None:
-                metrics.append(self.metric(target_trials[index], prediction))
+        predictions = _predict_trials_from_weights(
+            predictor_trials,
+            weights=weights,
+            lag_start=lag_start,
+        )
 
         returned_predictions: list[np.ndarray] | np.ndarray
         if predictor_is_single:
@@ -2177,7 +2645,11 @@ class FrequencyTRF:
         if target_trials is None:
             return returned_predictions
 
-        metric = np.mean(np.vstack(metrics), axis=0)
+        metric = _score_prediction_trials(
+            self.metric,
+            target_trials,
+            predictions,
+        )
         return returned_predictions, _aggregate_metric(metric, average)
 
     def score(
@@ -2224,6 +2696,7 @@ class FrequencyTRF:
         k: int,
         seed: int | None,
         average: bool | Sequence[int],
+        show_progress: bool,
         raw_trial_weights: np.ndarray,
         spectral_cache: _SpectralCache | None,
     ) -> np.ndarray:
@@ -2231,7 +2704,7 @@ class FrequencyTRF:
         if n_trials < 2:
             raise ValueError("Cross-validation needs at least two trials.")
 
-        n_folds = n_trials if k == -1 else int(k)
+        n_folds = n_trials if int(k) == -1 else int(k)
         if n_folds < 2:
             raise ValueError("k must be -1 or at least 2.")
         n_folds = min(n_folds, n_trials)
@@ -2260,32 +2733,70 @@ class FrequencyTRF:
                 detrend=detrend,
             )
 
-        candidate_specs = self.regularization_candidates
-        if candidate_specs is None or len(candidate_specs) != len(feature_regularization_values):
+        if (
+            self.regularization_candidates is None
+            or len(self.regularization_candidates) != len(feature_regularization_values)
+        ):
             raise RuntimeError("Regularization candidates are inconsistent with the CV search grid.")
 
-        for reg_index, feature_regularization in enumerate(feature_regularization_values):
-            for fold_index, val_idx in enumerate(folds):
-                train_idx = np.setdiff1d(indices, val_idx, assume_unique=True)
-                candidate = FrequencyTRF(direction=self.direction, metric=self.metric)
-                candidate._fit_from_cache(
+        fold_predictors: list[list[np.ndarray]] = []
+        fold_targets: list[list[np.ndarray]] = []
+        fold_spectra: list[tuple[np.ndarray, np.ndarray]] = []
+        for val_idx in folds:
+            val_predictors = [x_trials[i] for i in val_idx]
+            val_targets = [y_trials[i] for i in val_idx]
+            fold_predictors.append(val_predictors)
+            fold_targets.append(val_targets)
+
+            train_weights = raw_trial_weights.copy()
+            train_weights[val_idx] = 0.0
+            fold_spectra.append(
+                _aggregate_cached_spectra(
                     spectral_cache,
-                    fs=fs,
-                    tmin=tmin,
-                    tmax=tmax,
-                    regularization=candidate_specs[reg_index],
-                    feature_regularization=feature_regularization,
-                    bands=self.bands,
-                    raw_trial_weights=raw_trial_weights,
-                    trial_indices=train_idx,
+                    raw_trial_weights=train_weights,
                 )
-                per_reg_scores[reg_index, fold_index, :] = candidate.score(
-                    stimulus=[x_trials[i] for i in val_idx] if self.direction == 1 else [y_trials[i] for i in val_idx],
-                    response=[y_trials[i] for i in val_idx] if self.direction == 1 else [x_trials[i] for i in val_idx],
-                    average=False,
-                    tmin=tmin,
-                    tmax=tmax,
-                )
+            )
+
+        progress_bar = (
+            _SimpleProgressBar(
+                total=len(feature_regularization_values) * len(folds),
+                label="Cross-validating",
+            )
+            if show_progress
+            else None
+        )
+        try:
+            for fold_index, ((cxx, cxy), val_predictors, val_targets) in enumerate(
+                zip(fold_spectra, fold_predictors, fold_targets)
+            ):
+                for reg_index, feature_regularization in enumerate(feature_regularization_values):
+                    transfer_function = _solve_transfer_function(
+                        cxx,
+                        cxy,
+                        feature_regularization=feature_regularization,
+                    )
+                    weights, times = _extract_impulse_response(
+                        transfer_function,
+                        fs=float(fs),
+                        n_fft=spectral_cache.n_fft,
+                        tmin=float(tmin),
+                        tmax=float(tmax),
+                    )
+                    predictions = _predict_trials_from_weights(
+                        val_predictors,
+                        weights=weights,
+                        lag_start=int(round(times[0] * float(fs))),
+                    )
+                    per_reg_scores[reg_index, fold_index, :] = _score_prediction_trials(
+                        self.metric,
+                        val_targets,
+                        predictions,
+                    )
+                    if progress_bar is not None:
+                        progress_bar.update()
+        finally:
+            if progress_bar is not None:
+                progress_bar.close()
 
         fold_mean = per_reg_scores.mean(axis=1)
         if average is False:
@@ -2327,6 +2838,11 @@ class FrequencyTRF:
             self.regularization_candidates = (
                 None if self.regularization is None else [_copy_value(self.regularization)]
             )
+        if not hasattr(self, "segment_duration"):
+            if self.segment_length is not None and self.fs is not None:
+                self.segment_duration = float(self.segment_length) / float(self.fs)
+            else:
+                self.segment_duration = None
         if not hasattr(self, "spectral_method"):
             self.spectral_method = "standard"
         if not hasattr(self, "time_bandwidth"):

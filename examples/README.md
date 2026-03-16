@@ -31,6 +31,10 @@ practical with `FrequencyTRF`:
   Optional banded ridge search over grouped multifeature predictors.
 - `example_multitaper_estimator.py`
   Optional multi-taper estimation with `R^2`, transfer-function plots, cross spectra, and coherence.
+- `example_frequency_resolved_weights.py`
+  Spectrogram-like frequency-resolved view of one recovered kernel.
+- `example_alpha_plus_erp.py`
+  Event-related response that mixes an ERP-like component with a later alpha burst.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -47,7 +51,9 @@ They are meant to be read alongside the main README: each script follows the
 same pattern of `train(...)`, attribute inspection, `predict(...)`, and
 plotting, but focuses on one concrete use case. The optional features are
 covered with dedicated examples rather than changing the baseline examples into
-advanced-only workflows.
+advanced-only workflows. The examples now also demonstrate friendlier options
+such as `segment_duration=...` in seconds and `k="loo"` for leave-one-out
+cross-validation.
 
 Example commands:
 
@@ -57,6 +63,8 @@ python examples/example_multi_trial_single_channel.py
 python examples/example_multifeature_multichannel.py
 python examples/example_banded_regularization.py
 python examples/example_multitaper_estimator.py
+python examples/example_frequency_resolved_weights.py
+python examples/example_alpha_plus_erp.py
 python examples/example_backward_decoding.py
 python examples/example_bootstrap_confidence_interval.py
 python examples/example_trial_weighting.py

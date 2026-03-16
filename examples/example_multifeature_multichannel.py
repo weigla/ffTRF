@@ -85,10 +85,10 @@ def main() -> None:
         ax.plot(time[snippet], test_response[snippet, channel_index], label="Observed", color="#111111", linewidth=1.2)
         ax.plot(time[snippet], prediction[snippet, channel_index], label="Predicted", color="#C84C09", linewidth=1.0)
         ax.set_title(f"Held-out response, channel {channel_index + 1}")
+        ax.set_xlabel("Time (s)")
         ax.set_ylabel("Response")
         ax.grid(alpha=0.2, linewidth=0.6)
         ax.legend(loc="upper right")
-    prediction_axes[-1].set_xlabel("Time (s)")
     prediction_fig.tight_layout()
     finalize_figure(prediction_fig, output_path=PREDICTION_OUTPUT_PATH, show=False)
 

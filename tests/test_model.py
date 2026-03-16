@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from fftrf import (
+    FrequencyResolvedWeights,
     FrequencyTRF,
     available_metrics,
     explained_variance_score,
@@ -172,6 +173,190 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
 
     assert scores.shape == (6,)
     assert call_count == 1
+
+
+def test_cross_validation_aggregates_fold_spectra_once_per_fold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(29)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[3] = 0.9
+    kernel[8] = -0.35
+    kernel[15] = 0.12
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=8,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    call_count = 0
+    original = model_module._aggregate_cached_spectra
+
+    def counting_aggregate(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(model_module, "_aggregate_cached_spectra", counting_aggregate)
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=np.logspace(-5, 0, 6),
+        segment_length=512,
+        overlap=0.5,
+        k=4,
+    )
+
+    assert call_count == 5
+
+
+def test_segment_duration_alias_matches_segment_length() -> None:
+    rng = np.random.default_rng(30)
+    fs = 1_000
+    kernel = np.zeros(25)
+    kernel[4] = 0.95
+    kernel[9] = -0.3
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=5,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    by_samples = FrequencyTRF(direction=1)
+    by_samples.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.025,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        window="hann",
+    )
+
+    by_seconds = FrequencyTRF(direction=1)
+    by_seconds.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.025,
+        regularization=1e-3,
+        segment_duration=0.512,
+        overlap=0.5,
+        window="hann",
+    )
+
+    assert by_seconds.segment_length == 512
+    assert by_seconds.segment_duration == pytest.approx(0.512)
+    assert np.allclose(by_samples.weights, by_seconds.weights)
+
+
+def test_k_accepts_loo_alias() -> None:
+    rng = np.random.default_rng(31)
+    fs = 1_000
+    kernel = np.zeros(25)
+    kernel[3] = 0.9
+    kernel[7] = -0.25
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    scores = model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.025,
+        regularization=np.logspace(-5, -1, 5),
+        segment_duration=0.512,
+        overlap=0.5,
+        k="loo",
+    )
+
+    assert scores.shape == (5,)
+
+
+def test_single_lambda_warns_about_unused_cv_arguments() -> None:
+    rng = np.random.default_rng(32)
+    fs = 1_000
+    kernel = np.zeros(20)
+    kernel[2] = 0.8
+    kernel[6] = -0.2
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=4,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    with pytest.warns(UserWarning, match="ignored because cross-validation requires more than one regularization candidate"):
+        model.train(
+            stimulus=stimulus,
+            response=response,
+            fs=fs,
+            tmin=0.0,
+            tmax=0.020,
+            regularization=1e-3,
+            segment_duration=0.512,
+            k=4,
+            show_progress=True,
+        )
+
+
+def test_cv_progress_indicator_emits_output(capsys: pytest.CaptureFixture[str]) -> None:
+    rng = np.random.default_rng(33)
+    fs = 1_000
+    kernel = np.zeros(25)
+    kernel[3] = 0.85
+    kernel[8] = -0.25
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=5,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.025,
+        regularization=np.logspace(-5, -1, 5),
+        segment_duration=0.512,
+        k=3,
+        show_progress=True,
+    )
+
+    captured = capsys.readouterr()
+    assert "Cross-validating" in captured.err
+    assert "15/15" in captured.err
 
 
 def test_builtin_metric_helpers_and_registry() -> None:
@@ -352,6 +537,47 @@ def test_frequency_trf_diagnostics_returns_coherence() -> None:
     assert components.magnitude.shape == model.frequencies.shape
     assert components.phase.shape == model.frequencies.shape
     assert components.group_delay.shape == model.frequencies.shape
+
+
+def test_frequency_resolved_weights_reconstruct_kernel() -> None:
+    rng = np.random.default_rng(27)
+    fs = 1_000
+    times = np.arange(0, 0.080, 1.0 / fs)
+    kernel = (
+        np.exp(-0.5 * ((times - 0.020) / 0.006) ** 2) * np.cos(2.0 * np.pi * 18.0 * times)
+        + 0.6 * np.exp(-0.5 * ((times - 0.050) / 0.004) ** 2) * np.cos(2.0 * np.pi * 55.0 * times)
+    )
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=4_096,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.080,
+        regularization=1e-3,
+        segment_length=1024,
+        overlap=0.5,
+        window="hann",
+    )
+
+    resolved = model.frequency_resolved_weights(n_bands=12)
+    assert isinstance(resolved, FrequencyResolvedWeights)
+    assert resolved.weights.shape == (1, 12, model.weights.shape[1], 1)
+    assert resolved.at().shape == (12, model.weights.shape[1])
+    assert np.allclose(resolved.weights.sum(axis=1), model.weights, atol=1e-7, rtol=1e-7)
+
+    magnitude = model.frequency_resolved_weights(n_bands=10, value_mode="magnitude")
+    assert np.all(magnitude.weights >= 0.0)
+    assert magnitude.value_mode == "magnitude"
 
 
 def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
@@ -646,6 +872,45 @@ def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() ->
     assert cross_axes.shape == (2,)
     assert cross_axes[1].get_xlabel() == "Frequency (Hz)"
     plt.close(cross_fig)
+
+
+def test_frequency_resolved_weight_plot_if_matplotlib_available() -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+
+    rng = np.random.default_rng(28)
+    fs = 1_000
+    times = np.arange(0, 0.060, 1.0 / fs)
+    kernel = (
+        np.exp(-0.5 * ((times - 0.018) / 0.004) ** 2) * np.cos(2.0 * np.pi * 22.0 * times)
+        + 0.5 * np.exp(-0.5 * ((times - 0.042) / 0.003) ** 2) * np.cos(2.0 * np.pi * 70.0 * times)
+    )
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=5,
+        n_samples=3_072,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.060,
+        regularization=1e-3,
+        segment_length=1024,
+        overlap=0.5,
+        window="hann",
+    )
+
+    resolved = model.frequency_resolved_weights(n_bands=14)
+    fig, ax = model.plot_frequency_resolved_weights(resolved=resolved)
+    assert ax.get_xlabel() == "Lag (ms)"
+    assert ax.get_ylabel() == "Frequency (Hz)"
+    plt.close(fig)
 
 
 def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:

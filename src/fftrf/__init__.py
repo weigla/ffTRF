@@ -1,5 +1,6 @@
 from .model import (
     CrossSpectralDiagnostics,
+    FrequencyResolvedWeights,
     FrequencyTRF,
     FrequencyTRFDiagnostics,
     TransferFunctionComponents,
@@ -12,6 +13,7 @@ from .preprocessing import half_wave_rectify, inverse_variance_weights, resample
 
 __all__ = [
     "CrossSpectralDiagnostics",
+    "FrequencyResolvedWeights",
     "FrequencyTRF",
     "FrequencyTRFDiagnostics",
     "TransferFunctionComponents",

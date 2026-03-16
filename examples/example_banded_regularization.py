@@ -37,10 +37,11 @@ def main() -> None:
         tmax=dataset.tmax,
         regularization=regularization_grid,
         bands=[1, 1],
-        segment_length=1_024,
+        segment_duration=1.024,
         overlap=0.5,
         window="hann",
         k=4,
+        show_progress=True,
     )
     prediction, held_out_score = model.predict(stimulus=test_stimulus, response=test_response)
     score_grid = np.asarray(cv_scores, dtype=float).reshape(len(regularization_grid), len(regularization_grid))
@@ -50,6 +51,7 @@ def main() -> None:
     print(f"  selected band coefficients: {model.regularization}")
     print(f"  expanded feature penalties: {model.feature_regularization}")
     print(f"  candidate count: {len(model.regularization_candidates)}")
+    print(f"  segment_duration: {model.segment_duration}")
     print(f"  held-out correlation: {float(held_out_score):.4f}")
     print(f"  saved figure: {OUTPUT_PATH}")
 

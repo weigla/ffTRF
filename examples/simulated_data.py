@@ -252,6 +252,150 @@ def build_multi_trial_single_channel_dataset(
     )
 
 
+def build_frequency_resolved_dataset(
+    *,
+    fs: float = 1_000.0,
+    n_trials: int = 8,
+    n_samples: int = 12_000,
+    tmin: float = 0.0,
+    tmax: float = 0.320,
+    noise_scale: float = 0.035,
+    seed: int = 6,
+) -> SimulatedTRFDataset:
+    """Create an event-related response with a time-locked alpha burst."""
+
+    rng = np.random.default_rng(seed)
+    times = lag_times(fs, tmin, tmax)
+    erp = (
+        0.40 * np.exp(-0.5 * ((times - 0.035) / 0.010) ** 2)
+        - 0.25 * np.exp(-0.5 * ((times - 0.070) / 0.016) ** 2)
+    )
+    alpha_burst = (
+        0.55
+        * np.exp(-0.5 * ((times - 0.150) / 0.060) ** 2)
+        * np.cos(2.0 * np.pi * 10.0 * (times - 0.150))
+    )
+    late_component = 0.10 * np.exp(-0.5 * ((times - 0.240) / 0.030) ** 2)
+    kernel = erp + alpha_burst + late_component
+    true_weights = kernel[np.newaxis, :, np.newaxis]
+
+    stimulus = []
+    response = []
+    for _ in range(n_trials):
+        event_train = np.zeros(n_samples, dtype=float)
+        event_index = int(round(0.15 * fs))
+        min_interval = int(round(0.45 * fs))
+        max_interval = int(round(0.80 * fs))
+        while event_index < n_samples:
+            event_train[event_index] = 1.0
+            event_index += int(rng.integers(min_interval, max_interval + 1))
+
+        smoothing = np.hanning(max(5, int(round(0.018 * fs))))
+        smoothing /= np.clip(smoothing.sum(), np.finfo(float).eps, None)
+        driver = fftconvolve(event_train, smoothing, mode="full")[:n_samples]
+        driver += 0.015 * rng.standard_normal(n_samples)
+        driver = np.clip(driver, 0.0, None)
+        driver /= np.clip(driver.std(), np.finfo(float).eps, None)
+        trial_stimulus = driver[:, np.newaxis]
+        trial_response = simulate_response(
+            trial_stimulus,
+            true_weights,
+            fs=fs,
+            tmin=tmin,
+            noise_scale=noise_scale,
+            rng=rng,
+        )
+        stimulus.append(trial_stimulus)
+        response.append(trial_response)
+
+    return SimulatedTRFDataset(
+        stimulus=stimulus,
+        response=response,
+        true_weights=true_weights,
+        times=times,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        description=(
+            "Single-feature event-related response with an onset component and "
+            "a time-locked alpha burst around 150 ms."
+        ),
+    )
+
+
+def build_alpha_plus_erp_dataset(
+    *,
+    fs: float = 1_000.0,
+    n_trials: int = 8,
+    n_samples: int = 14_000,
+    tmin: float = 0.0,
+    tmax: float = 0.420,
+    noise_scale: float = 0.04,
+    seed: int = 7,
+) -> SimulatedTRFDataset:
+    """Create an event-related response with ERP peaks and a later alpha burst."""
+
+    rng = np.random.default_rng(seed)
+    times = lag_times(fs, tmin, tmax)
+
+    erp = (
+        0.28 * np.exp(-0.5 * ((times - 0.050) / 0.012) ** 2)
+        - 0.40 * np.exp(-0.5 * ((times - 0.105) / 0.020) ** 2)
+        + 0.32 * np.exp(-0.5 * ((times - 0.165) / 0.028) ** 2)
+    )
+    alpha_burst = (
+        0.26
+        * np.exp(-0.5 * ((times - 0.260) / 0.070) ** 2)
+        * np.cos(2.0 * np.pi * 10.0 * (times - 0.260))
+    )
+    kernel = erp + alpha_burst
+    true_weights = kernel[np.newaxis, :, np.newaxis]
+
+    stimulus = []
+    response = []
+    for _ in range(n_trials):
+        event_train = np.zeros(n_samples, dtype=float)
+        event_index = int(round(0.25 * fs))
+        min_interval = int(round(0.55 * fs))
+        max_interval = int(round(0.95 * fs))
+        while event_index < n_samples:
+            event_train[event_index] = 1.0
+            event_index += int(rng.integers(min_interval, max_interval + 1))
+
+        smoothing = np.hanning(max(5, int(round(0.014 * fs))))
+        smoothing /= np.clip(smoothing.sum(), np.finfo(float).eps, None)
+        driver = fftconvolve(event_train, smoothing, mode="full")[:n_samples]
+        driver += 0.02 * rng.standard_normal(n_samples)
+        driver = np.clip(driver, 0.0, None)
+        driver /= np.clip(driver.std(), np.finfo(float).eps, None)
+        trial_stimulus = driver[:, np.newaxis]
+
+        trial_response = simulate_response(
+            trial_stimulus,
+            true_weights,
+            fs=fs,
+            tmin=tmin,
+            noise_scale=noise_scale,
+            rng=rng,
+        )
+        stimulus.append(trial_stimulus)
+        response.append(trial_response)
+
+    return SimulatedTRFDataset(
+        stimulus=stimulus,
+        response=response,
+        true_weights=true_weights,
+        times=times,
+        fs=fs,
+        tmin=tmin,
+        tmax=tmax,
+        description=(
+            "Single-feature event-related response with an early ERP and a "
+            "later time-locked alpha burst."
+        ),
+    )
+
+
 def build_multifeature_multichannel_dataset(
     *,
     fs: float = 1_000.0,

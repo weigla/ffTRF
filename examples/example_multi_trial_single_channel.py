@@ -35,10 +35,11 @@ def main() -> None:
         tmin=dataset.tmin,
         tmax=dataset.tmax,
         regularization=regularization_grid,
-        segment_length=1_024,
+        segment_duration=1.024,
         overlap=0.5,
         window="hann",
-        k=len(train_stimulus),
+        k="loo",
+        show_progress=True,
         trial_weights=inverse_variance_weights(train_response),
     )
     prediction, held_out_score = model.predict(stimulus=test_stimulus, response=test_response)
@@ -52,6 +53,7 @@ def main() -> None:
     print(f"  held-out R^2: {held_out_r2:.4f}")
     print(f"  kernel correlation: {float(kernel_corr):.4f}")
     print(f"  segment_length: {model.segment_length}")
+    print(f"  segment_duration: {model.segment_duration}")
     print(f"  n_fft: {model.n_fft}")
     print(f"  weights shape: {model.weights.shape}")
     print(f"  saved figure: {OUTPUT_PATH}")

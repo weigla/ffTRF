@@ -35,11 +35,12 @@ def main() -> None:
         tmin=dataset.tmin,
         tmax=dataset.tmax,
         regularization=np.logspace(-5, -1, 5),
-        segment_length=1_024,
+        segment_duration=1.024,
         overlap=0.5,
         time_bandwidth=3.5,
         n_tapers=4,
-        k=4,
+        k="loo",
+        show_progress=True,
     )
     prediction, held_out_r2 = model.predict(
         stimulus=test_stimulus,
@@ -58,6 +59,7 @@ def main() -> None:
     print(f"  held-out R^2: {float(held_out_r2):.4f}")
     print(f"  held-out correlation: {held_out_corr:.4f}")
     print(f"  spectral method: {model.spectral_method}")
+    print(f"  segment_duration: {model.segment_duration}")
     print(f"  time_bandwidth: {model.time_bandwidth}")
     print(f"  n_tapers: {model.n_tapers}")
     print(f"  mean low-frequency coherence: {float(np.mean(diagnostics.coherence[:40, 0])):.4f}")

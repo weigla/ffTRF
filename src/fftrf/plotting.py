@@ -153,6 +153,90 @@ def plot_kernel_grid(
     return fig, axes
 
 
+def plot_frequency_resolved_weights(
+    *,
+    weights: np.ndarray,
+    times: np.ndarray,
+    band_centers: np.ndarray,
+    input_index: int = 0,
+    output_index: int = 0,
+    value_mode: str = "real",
+    bandwidth: float | None = None,
+    ax: Any = None,
+    time_unit: str = "ms",
+    cmap: str | None = None,
+    colorbar: bool = True,
+    title: str | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
+    frequency_axis_scale: str | None = None,
+) -> tuple[Any, Any]:
+    """Plot a spectrogram-like map of frequency-resolved kernel weights."""
+
+    plt = _require_matplotlib()
+    weights = np.asarray(weights, dtype=float)
+    times = np.asarray(times, dtype=float)
+    band_centers = np.asarray(band_centers, dtype=float)
+    if weights.ndim != 4:
+        raise ValueError(
+            "weights must have shape (n_inputs, n_bands, n_lags, n_outputs)."
+        )
+    if times.ndim != 1 or times.shape[0] != weights.shape[2]:
+        raise ValueError("times must be 1D and match the lag axis of weights.")
+    if band_centers.ndim != 1 or band_centers.shape[0] != weights.shape[1]:
+        raise ValueError(
+            "band_centers must be 1D and match the frequency-band axis of weights."
+        )
+    if not 0 <= int(input_index) < weights.shape[0]:
+        raise IndexError(f"input_index out of bounds: {input_index}")
+    if not 0 <= int(output_index) < weights.shape[3]:
+        raise IndexError(f"output_index out of bounds: {output_index}")
+
+    resolved_value_mode = str(value_mode).strip().lower()
+    if resolved_value_mode not in {"real", "magnitude", "power"}:
+        raise ValueError("value_mode must be 'real', 'magnitude', or 'power'.")
+
+    resolved_axis_scale = None if frequency_axis_scale is None else str(frequency_axis_scale).strip().lower()
+    if resolved_axis_scale not in {None, "linear", "log"}:
+        raise ValueError("frequency_axis_scale must be None, 'linear', or 'log'.")
+    if resolved_axis_scale == "log" and np.any(band_centers <= 0.0):
+        raise ValueError("Log-scaled frequency axes require strictly positive band centers.")
+
+    values = weights[int(input_index), :, :, int(output_index)]
+    time_values, time_label = _time_axis(times, time_unit=time_unit)
+    time_edges = _axis_edges(time_values)
+    frequency_edges = _axis_edges(band_centers, single_width=bandwidth)
+
+    if cmap is None:
+        cmap = "RdBu_r" if resolved_value_mode == "real" else "magma"
+    if resolved_value_mode == "real" and vmin is None and vmax is None:
+        limit = float(np.max(np.abs(values)))
+        vmin, vmax = -limit, limit
+
+    fig, axis = _coerce_axes(plt, ax)
+    mesh = axis.pcolormesh(
+        time_edges,
+        frequency_edges,
+        values,
+        shading="auto",
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+    )
+    axis.set_xlabel(time_label)
+    axis.set_ylabel("Frequency (Hz)")
+    axis.set_title(
+        title
+        or f"Frequency-resolved weights (input {int(input_index) + 1}, output {int(output_index) + 1})"
+    )
+    axis.grid(alpha=0.15, linewidth=0.5)
+    if resolved_axis_scale == "log":
+        axis.set_yscale("log")
+    if colorbar:
+        fig.colorbar(mesh, ax=axis, label=_frequency_weight_label(resolved_value_mode))
+    return fig, axis
+
+
 def plot_transfer_function(
     *,
     frequencies: np.ndarray,
@@ -463,6 +547,36 @@ def _time_axis(times: np.ndarray, *, time_unit: str) -> tuple[np.ndarray, str]:
     if time_unit == "ms":
         return times * 1e3, "Lag (ms)"
     raise ValueError("time_unit must be either 's' or 'ms'.")
+
+
+def _axis_edges(values: np.ndarray, *, single_width: float | None = None) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 1 or values.size == 0:
+        raise ValueError("values must be a non-empty 1D array.")
+    if values.size == 1:
+        if single_width is None:
+            width = max(abs(values[0]) * 0.5, 1.0)
+        else:
+            width = float(single_width)
+        return np.array([values[0] - 0.5 * width, values[0] + 0.5 * width], dtype=float)
+
+    midpoints = 0.5 * (values[1:] + values[:-1])
+    first = values[0] - (midpoints[0] - values[0])
+    last = values[-1] + (values[-1] - midpoints[-1])
+    edges = np.concatenate([[first], midpoints, [last]])
+    if np.all(values >= 0.0):
+        edges[0] = max(edges[0], 0.0)
+    return edges
+
+
+def _frequency_weight_label(value_mode: str) -> str:
+    if value_mode == "real":
+        return "Weight"
+    if value_mode == "magnitude":
+        return "|Weight|"
+    if value_mode == "power":
+        return "Weight$^2$"
+    raise ValueError(f"Unsupported value_mode: {value_mode!r}")
 
 
 def _phase_axis(

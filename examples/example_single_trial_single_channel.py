@@ -32,7 +32,7 @@ def main() -> None:
         tmin=dataset.tmin,
         tmax=dataset.tmax,
         regularization=1e-2,
-        segment_length=2_048,
+        segment_duration=2.048,
         overlap=0.5,
         window="hann",
     )
@@ -47,6 +47,7 @@ def main() -> None:
     print(f"  kernel correlation: {float(kernel_corr):.4f}")
     print(f"  regularization: {model.regularization}")
     print(f"  segment_length: {model.segment_length}")
+    print(f"  segment_duration: {model.segment_duration}")
     print(f"  n_fft: {model.n_fft}")
     print(f"  weights shape: {model.weights.shape}")
     print(f"  saved figure: {OUTPUT_PATH}")
@@ -58,11 +59,13 @@ def main() -> None:
 
     axes[0].plot(time[snippet], stimulus[snippet, 0], color="#0B6E4F", linewidth=1.2)
     axes[0].set_title("Simulated Envelope")
+    axes[0].set_xlabel("Time (s)")
     axes[0].set_ylabel("Amplitude")
 
     axes[1].plot(time[snippet], response[snippet, 0], label="Observed", color="#111111", linewidth=1.2)
     axes[1].plot(time[snippet], prediction[snippet, 0], label="Predicted", color="#C84C09", linewidth=1.0)
     axes[1].set_title("Simulated Brain Response")
+    axes[1].set_xlabel("Time (s)")
     axes[1].set_ylabel("Response")
     axes[1].legend(loc="upper right")
 
