@@ -12,6 +12,7 @@ import pytest
 from fftrf import (
     FrequencyResolvedWeights,
     FrequencyTRF,
+    TimeFrequencyPower,
     available_metrics,
     explained_variance_score,
     half_wave_rectify,
@@ -579,6 +580,14 @@ def test_frequency_resolved_weights_reconstruct_kernel() -> None:
     assert np.all(magnitude.weights >= 0.0)
     assert magnitude.value_mode == "magnitude"
 
+    resolved_subset = model.frequency_resolved_weights(n_bands=12, fmax=80.0)
+    time_frequency_power = model.time_frequency_power(n_bands=12, fmax=80.0)
+    assert isinstance(time_frequency_power, TimeFrequencyPower)
+    assert time_frequency_power.power.shape == resolved_subset.weights.shape
+    assert np.all(time_frequency_power.power >= 0.0)
+    assert np.allclose(time_frequency_power.band_centers, resolved_subset.band_centers)
+    assert np.allclose(time_frequency_power.times, resolved_subset.times)
+
 
 def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
     rng = np.random.default_rng(21)
@@ -911,6 +920,12 @@ def test_frequency_resolved_weight_plot_if_matplotlib_available() -> None:
     assert ax.get_xlabel() == "Lag (ms)"
     assert ax.get_ylabel() == "Frequency (Hz)"
     plt.close(fig)
+
+    power = model.time_frequency_power(n_bands=14)
+    power_fig, power_ax = model.plot_time_frequency_power(power=power)
+    assert power_ax.get_xlabel() == "Lag (ms)"
+    assert power_ax.get_ylabel() == "Frequency (Hz)"
+    plt.close(power_fig)
 
 
 def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:

@@ -26,7 +26,7 @@ import warnings
 import numpy as np
 from scipy.fft import next_fast_len
 from scipy.signal import detrend as scipy_detrend
-from scipy.signal import fftconvolve, get_window
+from scipy.signal import fftconvolve, get_window, hilbert
 from scipy.signal.windows import dpss
 
 _USE_STORED_TRIAL_WEIGHTS = object()
@@ -782,6 +782,58 @@ class FrequencyResolvedWeights:
         return self.weights[int(input_index), :, :, int(output_index)].copy()
 
 
+@dataclass(slots=True)
+class TimeFrequencyPower:
+    """Spectrogram-like time-frequency power derived from a fitted kernel.
+
+    Attributes
+    ----------
+    frequencies:
+        Original frequency vector of the fitted transfer function in Hz.
+    band_centers:
+        Center frequency of each analysis band in Hz.
+    filters:
+        Frequency-domain filter bank used to partition the transfer function.
+        Shape is ``(n_frequencies, n_bands)``.
+    times:
+        Lag vector in seconds corresponding to the third axis of :attr:`power`.
+    power:
+        Time-frequency power tensor with shape
+        ``(n_inputs, n_bands, n_lags, n_outputs)``.
+    scale:
+        Spacing used for :attr:`band_centers`, either ``"linear"`` or
+        ``"log"``.
+    method:
+        Power-estimation method. Currently ``"hilbert"`` computes the squared
+        magnitude of the analytic signal for each band-limited kernel.
+    bandwidth:
+        Gaussian filter width in Hz used for the analysis bands.
+    """
+
+    frequencies: np.ndarray
+    band_centers: np.ndarray
+    filters: np.ndarray
+    times: np.ndarray
+    power: np.ndarray
+    scale: str
+    method: str
+    bandwidth: float
+
+    def at(
+        self,
+        *,
+        input_index: int = 0,
+        output_index: int = 0,
+    ) -> np.ndarray:
+        """Return one frequency-by-lag power map."""
+
+        if not 0 <= int(input_index) < self.power.shape[0]:
+            raise IndexError(f"input_index out of bounds: {input_index}")
+        if not 0 <= int(output_index) < self.power.shape[3]:
+            raise IndexError(f"output_index out of bounds: {output_index}")
+        return self.power[int(input_index), :, :, int(output_index)].copy()
+
+
 def _resolve_raw_trial_weights(
     y_trials: Sequence[np.ndarray],
     trial_weights: None | str | Sequence[float],
@@ -1289,6 +1341,8 @@ class FrequencyTRF:
     - call :meth:`plot_grid` to visualize all input/output kernels at once
     - call :meth:`frequency_resolved_weights` or
       :meth:`plot_frequency_resolved_weights` for a spectrogram-like kernel view
+    - call :meth:`time_frequency_power` or :meth:`plot_time_frequency_power`
+      for a smoothed spectrogram-like power view of the kernel
     - call :meth:`plot_transfer_function` to inspect magnitude, phase, or group delay
     - call :meth:`cross_spectral_diagnostics`, :meth:`plot_coherence`, and
       :meth:`plot_cross_spectrum` for spectral prediction diagnostics
@@ -2131,6 +2185,56 @@ class FrequencyTRF:
             bandwidth=resolved_bandwidth,
         )
 
+    def time_frequency_power(
+        self,
+        *,
+        n_bands: int = 24,
+        fmin: float | None = None,
+        fmax: float | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        scale: str = "linear",
+        bandwidth: float | None = None,
+        method: str = "hilbert",
+    ) -> TimeFrequencyPower:
+        """Estimate spectrogram-like power from the fitted kernel.
+
+        This method starts from the signed band-limited kernels returned by
+        :meth:`frequency_resolved_weights` and converts each frequency band into
+        a smoother power representation. With the default ``method="hilbert"``,
+        power is the squared magnitude of the analytic signal of each
+        band-limited kernel. The result is closer to what users expect from a
+        spectrogram than simply squaring the oscillatory kernel itself.
+        """
+
+        resolved_method = str(method).strip().lower()
+        if resolved_method != "hilbert":
+            raise ValueError("method must currently be 'hilbert'.")
+
+        resolved = self.frequency_resolved_weights(
+            n_bands=n_bands,
+            fmin=fmin,
+            fmax=fmax,
+            tmin=tmin,
+            tmax=tmax,
+            scale=scale,
+            bandwidth=bandwidth,
+            value_mode="real",
+        )
+        analytic = hilbert(resolved.weights, axis=2)
+        power = np.abs(analytic) ** 2
+
+        return TimeFrequencyPower(
+            frequencies=resolved.frequencies.copy(),
+            band_centers=resolved.band_centers.copy(),
+            filters=resolved.filters.copy(),
+            times=resolved.times.copy(),
+            power=power,
+            scale=resolved.scale,
+            method=resolved_method,
+            bandwidth=resolved.bandwidth,
+        )
+
     def plot_frequency_resolved_weights(
         self,
         *,
@@ -2186,6 +2290,64 @@ class FrequencyTRF:
             vmin=vmin,
             vmax=vmax,
             frequency_axis_scale=resolved.scale if frequency_axis_scale is None else frequency_axis_scale,
+        )
+
+    def plot_time_frequency_power(
+        self,
+        *,
+        power: TimeFrequencyPower | None = None,
+        input_index: int = 0,
+        output_index: int = 0,
+        n_bands: int = 24,
+        fmin: float | None = None,
+        fmax: float | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        scale: str = "linear",
+        bandwidth: float | None = None,
+        method: str = "hilbert",
+        ax=None,
+        time_unit: str = "ms",
+        cmap: str | None = None,
+        colorbar: bool = True,
+        title: str | None = None,
+        vmin: float | None = None,
+        vmax: float | None = None,
+        frequency_axis_scale: str | None = None,
+    ):
+        """Plot a spectrogram-like time-frequency power map."""
+
+        from .plotting import plot_frequency_resolved_weights
+
+        if power is None:
+            power = self.time_frequency_power(
+                n_bands=n_bands,
+                fmin=fmin,
+                fmax=fmax,
+                tmin=tmin,
+                tmax=tmax,
+                scale=scale,
+                bandwidth=bandwidth,
+                method=method,
+            )
+
+        return plot_frequency_resolved_weights(
+            weights=power.power,
+            times=power.times,
+            band_centers=power.band_centers,
+            input_index=input_index,
+            output_index=output_index,
+            value_mode="power",
+            bandwidth=power.bandwidth,
+            ax=ax,
+            time_unit=time_unit,
+            cmap=cmap,
+            colorbar=colorbar,
+            colorbar_label="Power",
+            title=title,
+            vmin=vmin,
+            vmax=vmax,
+            frequency_axis_scale=power.scale if frequency_axis_scale is None else frequency_axis_scale,
         )
 
     def transfer_function_at(

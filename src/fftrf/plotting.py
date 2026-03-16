@@ -166,6 +166,7 @@ def plot_frequency_resolved_weights(
     time_unit: str = "ms",
     cmap: str | None = None,
     colorbar: bool = True,
+    colorbar_label: str | None = None,
     title: str | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
@@ -233,7 +234,11 @@ def plot_frequency_resolved_weights(
     if resolved_axis_scale == "log":
         axis.set_yscale("log")
     if colorbar:
-        fig.colorbar(mesh, ax=axis, label=_frequency_weight_label(resolved_value_mode))
+        fig.colorbar(
+            mesh,
+            ax=axis,
+            label=(_frequency_weight_label(resolved_value_mode) if colorbar_label is None else colorbar_label),
+        )
     return fig, axis
 
 

@@ -45,6 +45,10 @@ def main() -> None:
         fmax=40.0,
         value_mode="real",
     )
+    time_frequency_power = model.time_frequency_power(
+        n_bands=20,
+        fmax=40.0,
+    )
 
     print("Example: frequency-resolved weights")
     print(f"  description: {dataset.description}")
@@ -56,6 +60,7 @@ def main() -> None:
     print(f"  selected regularization: {model.regularization}")
     print(f"  transfer function shape: {model.transfer_function.shape}")
     print(f"  resolved weights shape: {resolved.weights.shape}")
+    print(f"  time-frequency power shape: {time_frequency_power.power.shape}")
     print(
         "  first five band centers (Hz): "
         + np.array2string(resolved.band_centers[:5], precision=1, separator=", ")
@@ -64,10 +69,10 @@ def main() -> None:
 
     plt = require_matplotlib()
     fig, axes = plt.subplots(
-        3,
+        4,
         1,
-        figsize=(10, 9),
-        gridspec_kw={"height_ratios": [1.1, 1.1, 1.8]},
+        figsize=(10, 11),
+        gridspec_kw={"height_ratios": [1.1, 1.1, 1.5, 1.5]},
     )
 
     time = np.arange(test_stimulus.shape[0]) / dataset.fs
@@ -89,7 +94,13 @@ def main() -> None:
     model.plot_frequency_resolved_weights(
         resolved=resolved,
         ax=axes[2],
-        title="Frequency-Resolved Weights (Alpha Range Emphasis)",
+        title="Frequency-Resolved Weights (Signed, Alpha Range Emphasis)",
+        time_unit="ms",
+    )
+    model.plot_time_frequency_power(
+        power=time_frequency_power,
+        ax=axes[3],
+        title="Time-Frequency Power (Hilbert, Alpha Range Emphasis)",
         time_unit="ms",
     )
 

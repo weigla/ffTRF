@@ -32,9 +32,7 @@ practical with `FrequencyTRF`:
 - `example_multitaper_estimator.py`
   Optional multi-taper estimation with `R^2`, transfer-function plots, cross spectra, and coherence.
 - `example_frequency_resolved_weights.py`
-  Spectrogram-like frequency-resolved view of one recovered kernel.
-- `example_alpha_plus_erp.py`
-  Event-related response that mixes an ERP-like component with a later alpha burst.
+  Spectrogram-like frequency-resolved view of one recovered kernel, shown as both signed weights and Hilbert-envelope power.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -64,7 +62,6 @@ python examples/example_multifeature_multichannel.py
 python examples/example_banded_regularization.py
 python examples/example_multitaper_estimator.py
 python examples/example_frequency_resolved_weights.py
-python examples/example_alpha_plus_erp.py
 python examples/example_backward_decoding.py
 python examples/example_bootstrap_confidence_interval.py
 python examples/example_trial_weighting.py
