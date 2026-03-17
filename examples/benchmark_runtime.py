@@ -6,7 +6,8 @@ The benchmark is intentionally simple and reproducible:
 - simulate continuous stimulus/response pairs from a known kernel
 - fit ``fftrf.FrequencyTRF`` with a fixed ridge value
 - fit ``mTRFpy`` with the same lag window and regularization
-- report median training time and per-fit peak memory across repeated runs
+- report median training time, per-fit peak memory, and held-out prediction
+  accuracy across repeated runs
 
 The resulting Markdown report is suitable for inclusion in project
 documentation or manuscripts.
@@ -59,6 +60,7 @@ class BenchmarkScenario:
     overlap: float = 0.0
     window: str | None = None
     k: int = -1
+    direction: int = 1
 
     @property
     def n_lags(self) -> int:
@@ -66,8 +68,21 @@ class BenchmarkScenario:
 
     @property
     def lag_matrix_mebibytes(self) -> float:
-        n_elements = self.n_trials * self.n_samples * self.n_lags * self.n_features
+        n_elements = (
+            self.n_trials
+            * self.n_samples
+            * self.n_lags
+            * self.n_predictors
+        )
         return n_elements * np.dtype(np.float64).itemsize / (1024.0**2)
+
+    @property
+    def n_predictors(self) -> int:
+        return self.n_features if self.direction == 1 else self.n_outputs
+
+    @property
+    def n_targets(self) -> int:
+        return self.n_outputs if self.direction == 1 else self.n_features
 
     @property
     def regularization_values(self) -> tuple[float, ...]:
@@ -91,7 +106,11 @@ class BenchmarkScenario:
 
     @property
     def shape_label(self) -> str:
-        return f"{self.n_features}->{self.n_outputs}"
+        return f"{self.n_predictors}->{self.n_targets}"
+
+    @property
+    def direction_label(self) -> str:
+        return "forward" if self.direction == 1 else "backward"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -187,7 +206,7 @@ def fit_frequency_trf(
 ) -> FrequencyTRF:
     """Fit ``FrequencyTRF`` for one scenario."""
 
-    model = FrequencyTRF(direction=1)
+    model = FrequencyTRF(direction=scenario.direction)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -214,7 +233,7 @@ def fit_mtrf(
 
     TRF = get_mtrf_class()
 
-    model = TRF(direction=1)
+    model = TRF(direction=scenario.direction)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -362,6 +381,31 @@ def default_scenarios() -> list[BenchmarkScenario]:
             overlap=0.5,
             window="hann",
         ),
+        BenchmarkScenario(
+            name="EEG-scale forward channels",
+            fs=128.0,
+            n_trials=6,
+            n_samples=1_024,
+            tmin=0.0,
+            tmax=52 / 128.0,
+            regularization=1e3,
+            n_features=16,
+            n_outputs=102,
+            seed=47,
+        ),
+        BenchmarkScenario(
+            name="102-channel backward decoder",
+            fs=128.0,
+            n_trials=6,
+            n_samples=1_024,
+            tmin=0.0,
+            tmax=52 / 128.0,
+            regularization=1e3,
+            n_features=1,
+            n_outputs=102,
+            seed=53,
+            direction=-1,
+        ),
     ]
 
 
@@ -410,10 +454,12 @@ def shifted_convolution(
 def simulate_multivariate_trials(
     scenario: BenchmarkScenario,
     kernel_bank: np.ndarray,
-    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    *,
+    seed: int | None = None,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """Simulate multifeature / multichannel trials for one scenario."""
 
-    rng = np.random.default_rng(scenario.seed)
+    rng = np.random.default_rng(scenario.seed if seed is None else seed)
     lag_start = int(round(scenario.tmin * scenario.fs))
 
     stimulus = []
@@ -433,6 +479,22 @@ def simulate_multivariate_trials(
         stimulus.append(x)
         response.append(y)
     return stimulus, response
+
+
+def mean_prediction_score(
+    model,
+    *,
+    stimulus: list[np.ndarray],
+    response: list[np.ndarray],
+) -> float:
+    """Return the mean held-out Pearson score across outputs."""
+
+    _, scores = model.predict(
+        stimulus=stimulus,
+        response=response,
+        average=False,
+    )
+    return float(np.mean(np.asarray(scores, dtype=float)))
 
 
 def run_worker_once(
@@ -472,6 +534,11 @@ def run_scenario(
 
     kernel_bank = build_kernel_bank(scenario)
     stimulus, response = simulate_multivariate_trials(scenario, kernel_bank)
+    heldout_stimulus, heldout_response = simulate_multivariate_trials(
+        scenario,
+        kernel_bank,
+        seed=scenario.seed + 10_000,
+    )
 
     fft_durations, fft_peak_memories = benchmark_worker(
         scenario_index,
@@ -489,10 +556,21 @@ def run_scenario(
     fft_model = fit_frequency_trf(stimulus, response, scenario)
     mtrf_model = fit_mtrf(stimulus, response, scenario)
     mtrf_kernel = np.asarray(mtrf_model.weights, dtype=float) / scenario.fs
+    fft_prediction_score = mean_prediction_score(
+        fft_model,
+        stimulus=heldout_stimulus,
+        response=heldout_response,
+    )
+    mtrf_prediction_score = mean_prediction_score(
+        mtrf_model,
+        stimulus=heldout_stimulus,
+        response=heldout_response,
+    )
 
     return {
         "name": scenario.name,
         "shape": scenario.shape_label,
+        "direction": scenario.direction_label,
         "fit_mode": scenario.fit_mode,
         "fft_setting": scenario.fft_setting,
         "fs_hz": int(scenario.fs),
@@ -505,6 +583,8 @@ def run_scenario(
         "mtrf_seconds": median(mtrf_durations),
         "mtrf_peak_mib": median(mtrf_peak_memories),
         "speedup": median(mtrf_durations) / median(fft_durations),
+        "fft_prediction_score": fft_prediction_score,
+        "mtrf_prediction_score": mtrf_prediction_score,
         "kernel_corr": safe_corrcoef(fft_model.weights, mtrf_kernel),
     }
 
@@ -539,19 +619,22 @@ def format_report(
         f"- Warmup runs: {warmup}",
         "- Peak memory: median per-fit peak RSS measured in isolated worker processes",
         "",
-        "All scenarios use forward regression on the same simulated data for both",
-        "methods. Fixed-ridge scenarios use the same lambda in both toolboxes, and",
-        "the cross-validated scenario uses the same candidate grid in both. Kernel",
-        "correlation is computed over the flattened full kernel bank.",
+        "Each row uses the same simulated data for both methods. Forward rows fit",
+        "predictor-to-response TRFs, while backward rows fit response-to-predictor",
+        "decoders. Fixed-ridge scenarios use the same lambda in both toolboxes,",
+        "and the cross-validated scenario uses the same candidate grid in both.",
+        "Held-out prediction scores are mean Pearson correlations over outputs.",
+        "Kernel correlation is computed over the flattened full kernel bank.",
         "",
-        "| Scenario | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | FrequencyTRF median fit (s) | FrequencyTRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | Speedup | Kernel corr. |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | FrequencyTRF median fit (s) | FrequencyTRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | Speedup | ffTRF held-out r | mTRFpy held-out r | Kernel corr. |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
     for row in rows:
         lines.append(
             "| "
             f"{row['name']} | "
+            f"{row['direction']} | "
             f"{row['shape']} | "
             f"{row['fit_mode']} | "
             f"{row['fft_setting']} | "
@@ -565,6 +648,8 @@ def format_report(
             f"{row['mtrf_seconds']:.4f} | "
             f"{row['mtrf_peak_mib']:.1f} | "
             f"{row['speedup']:.2f}x | "
+            f"{row['fft_prediction_score']:.4f} | "
+            f"{row['mtrf_prediction_score']:.4f} | "
             f"{row['kernel_corr']:.4f} |"
         )
 
@@ -572,10 +657,13 @@ def format_report(
         [
             "",
             "Interpretation:",
-            "- The approximate lag-matrix size is shown because it dominates the memory footprint of a standard time-domain fit and grows with both lag count and feature count.",
-            "- Kernel correlations close to 1 indicate that the two methods recover nearly the same flattened kernel bank under the matched settings used here.",
+            "- The approximate lag-matrix size is shown because it dominates the memory footprint of a standard time-domain fit and grows with both lag count and predictor count.",
+            "- `ffTRF held-out r` and `mTRFpy held-out r` are the main accuracy columns: they measure mean Pearson correlation on a separate held-out simulation split generated from the same ground-truth kernel.",
+            "- Kernel correlations close to 1 indicate that the two methods recover nearly the same flattened kernel bank. This is most interpretable for forward models; backward decoders can differ more in weight space while still making very similar predictions.",
+            "- Direct fixed-lambda `FrequencyTRF` fits now use an aggregated lower-memory spectral path automatically, so the fixed-ridge rows reflect the lighter-weight solver rather than the heavier CV cache path.",
             "- Cached spectra matter most in the cross-validated scenario because `FrequencyTRF` can reuse FFT work across lambda candidates, even if that does not automatically make it faster than `mTRFpy` on every machine.",
             "- The segmented Hann scenario is intentionally not the closest mTRF-like setting; it shows the cost of a more typical spectral-estimation workflow.",
+            "- The EEG-scale forward and 102-channel backward rows show how the trade-off changes once the output side becomes sensor-rich or the backward decoder has many predictor channels.",
             "- Peak RSS is measured per fit in a fresh worker process, so the reported memory is not inflated by earlier benchmark runs.",
         ]
     )

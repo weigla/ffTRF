@@ -62,6 +62,27 @@ def _simulate_multifeature_trials(
     return stimulus, response
 
 
+def _direct_transfer_function(
+    cxx: np.ndarray,
+    cxy: np.ndarray,
+    *,
+    feature_regularization: np.ndarray,
+) -> np.ndarray:
+    feature_regularization = np.asarray(feature_regularization, dtype=float)
+    if np.allclose(feature_regularization, feature_regularization[0]):
+        ridge_matrix = float(feature_regularization[0]) * np.eye(cxx.shape[1], dtype=np.complex128)
+    else:
+        ridge_matrix = np.diag(feature_regularization.astype(np.complex128))
+
+    transfer_function = np.zeros_like(cxy)
+    for frequency_index in range(cxx.shape[0]):
+        transfer_function[frequency_index] = np.linalg.solve(
+            cxx[frequency_index] + ridge_matrix,
+            cxy[frequency_index],
+        )
+    return transfer_function
+
+
 def test_frequency_trf_recovers_impulse_response() -> None:
     rng = np.random.default_rng(2)
     fs = 1_000
@@ -150,11 +171,13 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
     )
 
     call_count = 0
+    aggregate_flags: list[bool] = []
     original = model_module._build_spectral_cache
 
     def counting_cache(*args, **kwargs):
         nonlocal call_count
         call_count += 1
+        aggregate_flags.append(bool(kwargs.get("aggregate_only", False)))
         return original(*args, **kwargs)
 
     monkeypatch.setattr(model_module, "_build_spectral_cache", counting_cache)
@@ -174,6 +197,49 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
 
     assert scores.shape == (6,)
     assert call_count == 1
+    assert aggregate_flags == [False]
+
+
+def test_fixed_lambda_fit_uses_aggregated_spectra_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(18)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[4] = 0.85
+    kernel[10] = -0.30
+    kernel[17] = 0.10
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    aggregate_flags: list[bool] = []
+    original = model_module._build_spectral_cache
+
+    def counting_cache(*args, **kwargs):
+        aggregate_flags.append(bool(kwargs.get("aggregate_only", False)))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(model_module, "_build_spectral_cache", counting_cache)
+
+    model = FrequencyTRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+    )
+
+    assert aggregate_flags == [True]
 
 
 def test_cross_validation_aggregates_fold_spectra_once_per_fold(
@@ -218,6 +284,98 @@ def test_cross_validation_aggregates_fold_spectra_once_per_fold(
     )
 
     assert call_count == 5
+
+
+def test_solve_transfer_function_matches_direct_solver() -> None:
+    rng = np.random.default_rng(34)
+    n_frequencies = 16
+    n_inputs = 3
+    n_outputs = 2
+
+    a = rng.standard_normal((n_frequencies, n_inputs, n_inputs))
+    b = rng.standard_normal((n_frequencies, n_inputs, n_inputs))
+    cxx = np.matmul(a + 1j * b, np.swapaxes(np.conjugate(a + 1j * b), 1, 2))
+    cxy = rng.standard_normal((n_frequencies, n_inputs, n_outputs)) + 1j * rng.standard_normal(
+        (n_frequencies, n_inputs, n_outputs)
+    )
+
+    scalar_regularization = np.full(n_inputs, 1e-2)
+    direct_scalar = _direct_transfer_function(
+        cxx,
+        cxy,
+        feature_regularization=scalar_regularization,
+    )
+    optimized_scalar = model_module._solve_transfer_function(
+        cxx,
+        cxy,
+        feature_regularization=scalar_regularization,
+    )
+    assert np.allclose(optimized_scalar, direct_scalar, rtol=1e-10, atol=1e-12)
+
+    feature_regularization = np.array([1e-3, 3e-3, 1e-2])
+    direct_featurewise = _direct_transfer_function(
+        cxx,
+        cxy,
+        feature_regularization=feature_regularization,
+    )
+    optimized_featurewise = model_module._solve_transfer_function(
+        cxx,
+        cxy,
+        feature_regularization=feature_regularization,
+    )
+    assert np.allclose(optimized_featurewise, direct_featurewise, rtol=1e-10, atol=1e-12)
+
+
+def test_cross_validation_n_jobs_matches_serial_results() -> None:
+    rng = np.random.default_rng(35)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[3] = 0.9
+    kernel[8] = -0.35
+    kernel[15] = 0.12
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=8,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    serial = FrequencyTRF(direction=1)
+    serial_scores = serial.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=np.logspace(-5, 0, 6),
+        segment_length=512,
+        overlap=0.5,
+        k=4,
+        seed=3,
+        n_jobs=1,
+    )
+
+    parallel = FrequencyTRF(direction=1)
+    parallel_scores = parallel.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=np.logspace(-5, 0, 6),
+        segment_length=512,
+        overlap=0.5,
+        k=4,
+        seed=3,
+        n_jobs=2,
+    )
+
+    assert np.allclose(parallel_scores, serial_scores)
+    assert parallel.regularization == serial.regularization
+    assert np.allclose(parallel.weights, serial.weights, rtol=1e-10, atol=1e-12)
+    assert np.allclose(parallel.transfer_function, serial.transfer_function, rtol=1e-10, atol=1e-12)
 
 
 def test_segment_duration_alias_matches_segment_length() -> None:
@@ -727,6 +885,58 @@ def test_frequency_trf_stores_bootstrap_interval() -> None:
     assert model.bootstrap_samples == 24
     assert np.all(interval[0] <= interval[1])
     assert np.mean((model.weights >= interval[0]) & (model.weights <= interval[1])) > 0.7
+
+
+def test_bootstrap_n_jobs_matches_serial_results() -> None:
+    rng = np.random.default_rng(36)
+    fs = 1_000
+    kernel = np.zeros(40)
+    kernel[4] = 1.0
+    kernel[11] = -0.45
+    kernel[19] = 0.2
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=3_072,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    serial = FrequencyTRF(direction=1)
+    serial.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.040,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        bootstrap_samples=12,
+        bootstrap_level=0.9,
+        bootstrap_seed=2,
+        n_jobs=1,
+    )
+
+    parallel = FrequencyTRF(direction=1)
+    parallel.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.040,
+        regularization=1e-3,
+        segment_length=512,
+        overlap=0.5,
+        bootstrap_samples=12,
+        bootstrap_level=0.9,
+        bootstrap_seed=2,
+        n_jobs=2,
+    )
+
+    assert np.allclose(parallel.weights, serial.weights, rtol=1e-10, atol=1e-12)
+    assert np.allclose(parallel.bootstrap_interval, serial.bootstrap_interval, rtol=1e-10, atol=1e-12)
 
 
 def test_optional_comparison_helper_runs_without_mtrf_dependency() -> None:

@@ -15,16 +15,21 @@ rates, or represented by many lagged samples.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import product
+import os
 import pickle
 from pathlib import Path
 import sys
+from threading import Lock
 from typing import Callable, Iterable, Sequence
 import warnings
 
 import numpy as np
 from scipy.fft import next_fast_len
+from scipy.linalg import LinAlgError as scipy_linalg_LinAlgError
+from scipy.linalg import cho_factor, cho_solve
 from scipy.signal import detrend as scipy_detrend
 from scipy.signal import fftconvolve, get_window, hilbert
 from scipy.signal.windows import dpss
@@ -321,6 +326,17 @@ def _resolve_k_folds(k: int | str) -> int:
     return int(k)
 
 
+def _resolve_n_jobs(n_jobs: int | None) -> int:
+    if n_jobs is None:
+        return 1
+    resolved = int(n_jobs)
+    if resolved == -1:
+        return max(1, int(os.cpu_count() or 1))
+    if resolved < 1:
+        raise ValueError("n_jobs must be a positive integer, None, or -1.")
+    return resolved
+
+
 def _warn_if_cv_arguments_are_unused(
     *,
     n_candidates: int,
@@ -361,19 +377,22 @@ class _SimpleProgressBar:
         self.current = 0
         self.stream = sys.stderr
         self.use_carriage = bool(getattr(self.stream, "isatty", lambda: False)())
+        self._lock = Lock()
         self._emit()
 
     def update(self, step: int = 1) -> None:
-        self.current = min(self.total, self.current + int(step))
-        self._emit()
+        with self._lock:
+            self.current = min(self.total, self.current + int(step))
+            self._emit()
 
     def close(self) -> None:
-        if self.use_carriage:
-            self.stream.write("\n")
-            self.stream.flush()
-        elif self.current < self.total:
-            self.current = self.total
-            self._emit()
+        with self._lock:
+            if self.use_carriage:
+                self.stream.write("\n")
+                self.stream.flush()
+            elif self.current < self.total:
+                self.current = self.total
+                self._emit()
 
     def _emit(self) -> None:
         fraction = self.current / self.total
@@ -662,6 +681,15 @@ class _SpectralCache:
     n_tapers: int | None
     window: None | str | tuple[str, float] | np.ndarray
     detrend: None | str
+
+
+@dataclass(slots=True)
+class _ScalarRidgeDecomposition:
+    """Cached eigen-decomposition reused across scalar-ridge solves."""
+
+    eigenvalues: np.ndarray
+    eigenvectors: np.ndarray
+    projected_rhs: np.ndarray
 
 
 @dataclass(slots=True)
@@ -987,6 +1015,8 @@ def _build_spectral_cache(
     n_tapers: int | None,
     window: None | str | tuple[str, float] | np.ndarray,
     detrend: None | str,
+    aggregate_only: bool = False,
+    raw_trial_weights: np.ndarray | None = None,
 ) -> _SpectralCache:
     spectral_method = _validate_spectral_method(spectral_method)
     resolved_segment_length, resolved_n_fft = _resolve_spectral_settings(
@@ -998,9 +1028,18 @@ def _build_spectral_cache(
     n_inputs = x_trials[0].shape[1]
     n_outputs = y_trials[0].shape[1]
     n_frequencies = resolved_n_fft // 2 + 1
+    stored_trials = 1 if aggregate_only else n_trials
+    normalized_trial_weights = None
+    if aggregate_only:
+        if raw_trial_weights is None:
+            normalized_trial_weights = np.full(n_trials, 1.0 / n_trials, dtype=float)
+        else:
+            if np.asarray(raw_trial_weights, dtype=float).shape != (n_trials,):
+                raise ValueError("raw_trial_weights must match the number of trials.")
+            normalized_trial_weights = _normalize_weight_vector(raw_trial_weights)
 
-    trial_cxx = np.zeros((n_trials, n_frequencies, n_inputs, n_inputs), dtype=np.complex128)
-    trial_cxy = np.zeros((n_trials, n_frequencies, n_inputs, n_outputs), dtype=np.complex128)
+    trial_cxx = np.zeros((stored_trials, n_frequencies, n_inputs, n_inputs), dtype=np.complex128)
+    trial_cxy = np.zeros((stored_trials, n_frequencies, n_inputs, n_outputs), dtype=np.complex128)
 
     window_cache: dict[int, np.ndarray] = {}
     taper_cache: dict[tuple[int, float, int], np.ndarray] = {}
@@ -1014,6 +1053,8 @@ def _build_spectral_cache(
         resolved_n_tapers = None
 
     for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials)):
+        stored_trial_index = 0 if aggregate_only else trial_index
+        trial_weight = 1.0 if normalized_trial_weights is None else float(normalized_trial_weights[trial_index])
         segments = list(
             _iter_segments(
                 x_trial,
@@ -1022,7 +1063,7 @@ def _build_spectral_cache(
                 overlap=overlap,
             )
         )
-        segment_weight = 1.0 / len(segments)
+        segment_weight = trial_weight / len(segments)
         for x_segment, y_segment in segments:
             if spectral_method == "multitaper":
                 taper_key = (
@@ -1063,10 +1104,10 @@ def _build_spectral_cache(
                     x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
                     y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
 
-                    trial_cxx[trial_index] += taper_weight * np.einsum(
+                    trial_cxx[stored_trial_index] += taper_weight * np.einsum(
                         "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
                     )
-                    trial_cxy[trial_index] += taper_weight * np.einsum(
+                    trial_cxy[stored_trial_index] += taper_weight * np.einsum(
                         "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
                     )
             else:
@@ -1088,10 +1129,10 @@ def _build_spectral_cache(
                 x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
                 y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
 
-                trial_cxx[trial_index] += segment_weight * np.einsum(
+                trial_cxx[stored_trial_index] += segment_weight * np.einsum(
                     "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
                 )
-                trial_cxy[trial_index] += segment_weight * np.einsum(
+                trial_cxy[stored_trial_index] += segment_weight * np.einsum(
                     "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
                 )
 
@@ -1137,11 +1178,68 @@ def _aggregate_cached_spectra(
     return cxx, cxy
 
 
+def _scalar_regularization_value(feature_regularization: np.ndarray) -> float | None:
+    penalties = np.asarray(feature_regularization, dtype=float)
+    if penalties.ndim != 1 or penalties.size == 0:
+        raise ValueError("feature_regularization must be a non-empty 1D array.")
+    if np.allclose(penalties, penalties[0]):
+        return _coerce_nonnegative_float(
+            float(penalties[0]),
+            name="feature_regularization",
+        )
+    return None
+
+
+def _scalar_regularization_grid(
+    feature_regularization_values: Sequence[np.ndarray],
+) -> np.ndarray | None:
+    scalar_values = []
+    for feature_regularization in feature_regularization_values:
+        scalar_value = _scalar_regularization_value(feature_regularization)
+        if scalar_value is None or scalar_value <= 0.0:
+            return None
+        scalar_values.append(scalar_value)
+    return np.asarray(scalar_values, dtype=float)
+
+
+def _prepare_scalar_ridge_decomposition(
+    cxx: np.ndarray,
+    cxy: np.ndarray,
+) -> _ScalarRidgeDecomposition:
+    cxx = np.asarray(cxx, dtype=np.complex128)
+    cxy = np.asarray(cxy, dtype=np.complex128)
+    hermitian_cxx = 0.5 * (cxx + np.swapaxes(np.conjugate(cxx), 1, 2))
+    eigenvalues, eigenvectors = np.linalg.eigh(hermitian_cxx)
+    eigenvalues = np.maximum(eigenvalues.real, 0.0)
+    projected_rhs = np.matmul(
+        np.swapaxes(np.conjugate(eigenvectors), 1, 2),
+        cxy,
+    )
+    return _ScalarRidgeDecomposition(
+        eigenvalues=eigenvalues,
+        eigenvectors=eigenvectors,
+        projected_rhs=projected_rhs,
+    )
+
+
+def _solve_scalar_ridge_from_decomposition(
+    decomposition: _ScalarRidgeDecomposition,
+    *,
+    regularization: float,
+) -> np.ndarray:
+    ridge = _coerce_nonnegative_float(regularization, name="feature_regularization")
+    denominator = decomposition.eigenvalues + ridge
+    scaled_rhs = decomposition.projected_rhs / denominator[..., np.newaxis]
+    return np.matmul(decomposition.eigenvectors, scaled_rhs)
+
+
 def _solve_transfer_function(
     cxx: np.ndarray,
     cxy: np.ndarray,
     *,
     feature_regularization: np.ndarray,
+    scalar_decomposition: _ScalarRidgeDecomposition | None = None,
+    scalar_regularization: float | None = None,
 ) -> np.ndarray:
     feature_regularization = np.asarray(feature_regularization, dtype=float)
     if feature_regularization.shape != (cxx.shape[1],):
@@ -1149,21 +1247,47 @@ def _solve_transfer_function(
             "feature_regularization must provide one penalty per predictor feature."
         )
 
-    if np.allclose(feature_regularization, feature_regularization[0]):
-        ridge_matrix = (
-            _coerce_nonnegative_float(
-                float(feature_regularization[0]),
-                name="feature_regularization",
-            )
-            * np.eye(cxx.shape[1], dtype=np.complex128)
+    scalar_value = (
+        _scalar_regularization_value(feature_regularization)
+        if scalar_regularization is None
+        else _coerce_nonnegative_float(
+            float(scalar_regularization),
+            name="feature_regularization",
         )
-    else:
-        ridge_matrix = np.diag(feature_regularization.astype(np.complex128))
+    )
+    if scalar_decomposition is not None:
+        if scalar_value is None:
+            raise ValueError(
+                "scalar_decomposition can only be used with scalar ridge regularization."
+            )
+        return _solve_scalar_ridge_from_decomposition(
+            scalar_decomposition,
+            regularization=scalar_value,
+        )
+
+    ridge_diagonal = (
+        np.full(cxx.shape[1], scalar_value, dtype=float)
+        if scalar_value is not None
+        else feature_regularization.astype(float, copy=True)
+    )
 
     transfer_function = np.zeros_like(cxy)
     for frequency_index in range(cxx.shape[0]):
-        system = cxx[frequency_index] + ridge_matrix
-        transfer_function[frequency_index] = np.linalg.solve(system, cxy[frequency_index])
+        system = np.array(cxx[frequency_index], dtype=np.complex128, copy=True)
+        system = 0.5 * (system + np.conjugate(system.T))
+        system.flat[:: system.shape[0] + 1] += ridge_diagonal
+        try:
+            factor = cho_factor(system, lower=False, check_finite=False)
+            transfer_function[frequency_index] = cho_solve(
+                factor,
+                np.asarray(cxy[frequency_index], dtype=np.complex128),
+                check_finite=False,
+            )
+        except (np.linalg.LinAlgError, scipy_linalg_LinAlgError):
+            transfer_function[frequency_index] = np.linalg.solve(
+                system,
+                cxy[frequency_index],
+            )
     return transfer_function
 
 
@@ -1224,6 +1348,7 @@ def _compute_bootstrap_interval_from_cache(
     n_bootstraps: int,
     level: float,
     seed: int | None,
+    n_jobs: int = 1,
 ) -> tuple[np.ndarray, np.ndarray]:
     if n_bootstraps <= 0:
         raise ValueError("n_bootstraps must be positive.")
@@ -1233,6 +1358,7 @@ def _compute_bootstrap_interval_from_cache(
 
     rng = np.random.default_rng(seed)
     n_trials = spectral_cache.trial_cxx.shape[0]
+    sampled_indices = rng.integers(0, n_trials, size=(n_bootstraps, n_trials))
     kernels = np.zeros(
         (
             n_bootstraps,
@@ -1243,9 +1369,8 @@ def _compute_bootstrap_interval_from_cache(
         dtype=float,
     )
 
-    for bootstrap_index in range(n_bootstraps):
-        sampled_indices = rng.integers(0, n_trials, size=n_trials)
-        sampled_weights = np.bincount(sampled_indices, minlength=n_trials).astype(float)
+    def _bootstrap_kernel(sampled_trial_indices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        sampled_weights = np.bincount(sampled_trial_indices, minlength=n_trials).astype(float)
         sampled_weights *= raw_trial_weights
         cxx, cxy = _aggregate_cached_spectra(
             spectral_cache,
@@ -1256,13 +1381,27 @@ def _compute_bootstrap_interval_from_cache(
             cxy,
             feature_regularization=feature_regularization,
         )
-        kernels[bootstrap_index], times = _extract_impulse_response(
+        return _extract_impulse_response(
             transfer_function,
             fs=fs,
             n_fft=spectral_cache.n_fft,
             tmin=tmin,
             tmax=tmax,
         )
+
+    resolved_n_jobs = min(_resolve_n_jobs(n_jobs), n_bootstraps)
+    if resolved_n_jobs == 1:
+        for bootstrap_index, sampled_trial_indices in enumerate(sampled_indices):
+            kernels[bootstrap_index], times = _bootstrap_kernel(sampled_trial_indices)
+    else:
+        with ThreadPoolExecutor(max_workers=resolved_n_jobs) as executor:
+            futures = {
+                executor.submit(_bootstrap_kernel, sampled_trial_indices): bootstrap_index
+                for bootstrap_index, sampled_trial_indices in enumerate(sampled_indices)
+            }
+            for future in as_completed(futures):
+                bootstrap_index = futures[future]
+                kernels[bootstrap_index], times = future.result()
 
     alpha = (1.0 - level) / 2.0
     interval = np.quantile(kernels, [alpha, 1.0 - alpha], axis=0)
@@ -1327,6 +1466,59 @@ def _score_prediction_trials(
     )
 
 
+def _score_regularization_grid_for_fold(
+    *,
+    cxx: np.ndarray,
+    cxy: np.ndarray,
+    val_predictors: Sequence[np.ndarray],
+    val_targets: Sequence[np.ndarray],
+    feature_regularization_values: Sequence[np.ndarray],
+    fs: float,
+    n_fft: int,
+    tmin: float,
+    tmax: float,
+    metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
+) -> np.ndarray:
+    scores = np.zeros(
+        (len(feature_regularization_values), val_targets[0].shape[1]),
+        dtype=float,
+    )
+    lag_start = int(round(float(tmin) * float(fs)))
+    scalar_grid = _scalar_regularization_grid(feature_regularization_values)
+    scalar_decomposition = (
+        _prepare_scalar_ridge_decomposition(cxx, cxy)
+        if scalar_grid is not None
+        else None
+    )
+
+    for reg_index, feature_regularization in enumerate(feature_regularization_values):
+        transfer_function = _solve_transfer_function(
+            cxx,
+            cxy,
+            feature_regularization=feature_regularization,
+            scalar_decomposition=scalar_decomposition,
+            scalar_regularization=None if scalar_grid is None else float(scalar_grid[reg_index]),
+        )
+        weights, _ = _extract_impulse_response(
+            transfer_function,
+            fs=float(fs),
+            n_fft=n_fft,
+            tmin=float(tmin),
+            tmax=float(tmax),
+        )
+        predictions = _predict_trials_from_weights(
+            val_predictors,
+            weights=weights,
+            lag_start=lag_start,
+        )
+        scores[reg_index, :] = _score_prediction_trials(
+            metric,
+            val_targets,
+            predictions,
+        )
+    return scores
+
+
 class FrequencyTRF:
     """
     Estimate stimulus-response mappings in the frequency domain.
@@ -1353,7 +1545,9 @@ class FrequencyTRF:
     high-rate continuous data where explicitly building large lag matrices is
     cumbersome. When multiple regularization values are supplied, the estimator
     caches per-trial spectral statistics so cross-validation can reuse them
-    instead of recomputing FFTs for every fold and candidate value.
+    instead of recomputing FFTs for every fold and candidate value. In direct
+    single-lambda fits, the estimator automatically uses an aggregated
+    lower-memory spectral path because no per-trial cache is needed.
 
     Parameters
     ----------
@@ -1482,6 +1676,7 @@ class FrequencyTRF:
         average: bool | Sequence[int] = True,
         seed: int | None = None,
         show_progress: bool = False,
+        n_jobs: int | None = 1,
         trial_weights: None | str | Sequence[float] = None,
         bootstrap_samples: int = 0,
         bootstrap_level: float = 0.95,
@@ -1569,6 +1764,10 @@ class FrequencyTRF:
         show_progress:
             If ``True`` and cross-validation is active, print a small progress
             indicator to standard error while fold/candidate evaluations run.
+        n_jobs:
+            Number of worker threads used for cross-validation folds and
+            bootstrap resamples. ``1`` keeps the serial behavior. ``-1`` uses
+            all available CPU cores.
         trial_weights:
             Optional trial weights. Use ``"inverse_variance"`` for
             inverse-variance weighting or pass an explicit vector with one
@@ -1595,9 +1794,11 @@ class FrequencyTRF:
         cross-validation is used. In that case the final fit uses the selected
         regularization value and all provided trials. When multiple
         regularization values are supplied, the per-trial spectra are cached so
-        the FFT work is performed only once. Banded regularization is entirely
-        opt-in through ``bands``; leaving it unset preserves the default
-        "mTRF in Fourier space" workflow.
+        the FFT work is performed only once. Direct single-lambda fits use a
+        lower-memory aggregated-spectra path automatically because no trialwise
+        cache is needed. Banded regularization is entirely opt-in through
+        ``bands``; leaving it unset preserves the default "mTRF in Fourier
+        space" workflow.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -1629,6 +1830,7 @@ class FrequencyTRF:
         if int(bootstrap_samples) < 0:
             raise ValueError("bootstrap_samples must be non-negative.")
         _validate_confidence_level(bootstrap_level, name="bootstrap_level")
+        n_jobs = _resolve_n_jobs(n_jobs)
         spectral_method = _validate_spectral_method(spectral_method)
         resolved_bands = _validate_bands(bands, n_inputs=x_trials[0].shape[1])
         feature_regularization_values, regularization_specs = _resolve_regularization_candidates(
@@ -1710,6 +1912,7 @@ class FrequencyTRF:
                         n_bootstraps=int(bootstrap_samples),
                         level=float(bootstrap_level),
                         seed=bootstrap_seed,
+                        n_jobs=n_jobs,
                     )
                     self.bootstrap_level = float(bootstrap_level)
                     self.bootstrap_samples = int(bootstrap_samples)
@@ -1734,6 +1937,7 @@ class FrequencyTRF:
             seed=seed,
             average=average,
             show_progress=show_progress,
+            n_jobs=n_jobs,
             raw_trial_weights=raw_trial_weights,
             spectral_cache=spectral_cache,
         )
@@ -1765,6 +1969,7 @@ class FrequencyTRF:
                 n_bootstraps=int(bootstrap_samples),
                 level=float(bootstrap_level),
                 seed=bootstrap_seed,
+                n_jobs=n_jobs,
             )
             self.bootstrap_level = float(bootstrap_level)
             self.bootstrap_samples = int(bootstrap_samples)
@@ -1791,6 +1996,7 @@ class FrequencyTRF:
         average: bool | Sequence[int] = True,
         seed: int | None = None,
         show_progress: bool = False,
+        n_jobs: int | None = 1,
         trial_weights: None | str | Sequence[float] = None,
         bootstrap_samples: int = 0,
         bootstrap_level: float = 0.95,
@@ -1824,6 +2030,7 @@ class FrequencyTRF:
             average=average,
             seed=seed,
             show_progress=show_progress,
+            n_jobs=n_jobs,
             trial_weights=trial_weights,
             bootstrap_samples=bootstrap_samples,
             bootstrap_level=bootstrap_level,
@@ -1851,6 +2058,7 @@ class FrequencyTRF:
         detrend: None | str,
         trial_weights: None | str | Sequence[float],
     ) -> None:
+        raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
         spectral_cache = _build_spectral_cache(
             x_trials,
             y_trials,
@@ -1862,6 +2070,8 @@ class FrequencyTRF:
             n_tapers=n_tapers,
             window=window,
             detrend=detrend,
+            aggregate_only=True,
+            raw_trial_weights=raw_trial_weights,
         )
         self._fit_from_cache(
             spectral_cache,
@@ -1871,7 +2081,7 @@ class FrequencyTRF:
             regularization=regularization,
             feature_regularization=feature_regularization,
             bands=bands,
-            raw_trial_weights=_resolve_raw_trial_weights(y_trials, trial_weights),
+            raw_trial_weights=None,
         )
         self.window = _copy_value(window)
         self.detrend = detrend
@@ -2667,6 +2877,7 @@ class FrequencyTRF:
         n_bootstraps: int = 200,
         level: float = 0.95,
         seed: int | None = None,
+        n_jobs: int | None = 1,
         trial_weights: None | str | Sequence[float] | object = _USE_STORED_TRIAL_WEIGHTS,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Estimate and store a trial-bootstrap confidence interval.
@@ -2674,7 +2885,8 @@ class FrequencyTRF:
         The estimator must already be fitted. By default the method reuses the
         same fit settings and the same trial-weighting strategy as the model.
         Bootstrap resampling is performed over trials, so at least two trials
-        are required.
+        are required. ``n_jobs`` controls optional parallel execution across
+        bootstrap resamples.
         """
 
         if self.regularization is None or self.fs is None or self.tmin is None or self.tmax is None:
@@ -2711,6 +2923,7 @@ class FrequencyTRF:
             n_bootstraps=int(n_bootstraps),
             level=float(level),
             seed=seed,
+            n_jobs=n_jobs,
         )
         self.bootstrap_interval = interval
         self.bootstrap_level = float(level)
@@ -2859,6 +3072,7 @@ class FrequencyTRF:
         seed: int | None,
         average: bool | Sequence[int],
         show_progress: bool,
+        n_jobs: int,
         raw_trial_weights: np.ndarray,
         spectral_cache: _SpectralCache | None,
     ) -> np.ndarray:
@@ -2928,34 +3142,47 @@ class FrequencyTRF:
             else None
         )
         try:
-            for fold_index, ((cxx, cxy), val_predictors, val_targets) in enumerate(
-                zip(fold_spectra, fold_predictors, fold_targets)
-            ):
-                for reg_index, feature_regularization in enumerate(feature_regularization_values):
-                    transfer_function = _solve_transfer_function(
-                        cxx,
-                        cxy,
-                        feature_regularization=feature_regularization,
-                    )
-                    weights, times = _extract_impulse_response(
-                        transfer_function,
+            fold_inputs = list(zip(fold_spectra, fold_predictors, fold_targets, strict=True))
+            resolved_n_jobs = min(_resolve_n_jobs(n_jobs), len(fold_inputs))
+            if resolved_n_jobs == 1:
+                for fold_index, ((cxx, cxy), val_predictors, val_targets) in enumerate(fold_inputs):
+                    per_reg_scores[:, fold_index, :] = _score_regularization_grid_for_fold(
+                        cxx=cxx,
+                        cxy=cxy,
+                        val_predictors=val_predictors,
+                        val_targets=val_targets,
+                        feature_regularization_values=feature_regularization_values,
                         fs=float(fs),
                         n_fft=spectral_cache.n_fft,
                         tmin=float(tmin),
                         tmax=float(tmax),
-                    )
-                    predictions = _predict_trials_from_weights(
-                        val_predictors,
-                        weights=weights,
-                        lag_start=int(round(times[0] * float(fs))),
-                    )
-                    per_reg_scores[reg_index, fold_index, :] = _score_prediction_trials(
-                        self.metric,
-                        val_targets,
-                        predictions,
+                        metric=self.metric,
                     )
                     if progress_bar is not None:
-                        progress_bar.update()
+                        progress_bar.update(len(feature_regularization_values))
+            else:
+                with ThreadPoolExecutor(max_workers=resolved_n_jobs) as executor:
+                    futures = {
+                        executor.submit(
+                            _score_regularization_grid_for_fold,
+                            cxx=cxx,
+                            cxy=cxy,
+                            val_predictors=val_predictors,
+                            val_targets=val_targets,
+                            feature_regularization_values=feature_regularization_values,
+                            fs=float(fs),
+                            n_fft=spectral_cache.n_fft,
+                            tmin=float(tmin),
+                            tmax=float(tmax),
+                            metric=self.metric,
+                        ): fold_index
+                        for fold_index, ((cxx, cxy), val_predictors, val_targets) in enumerate(fold_inputs)
+                    }
+                    for future in as_completed(futures):
+                        fold_index = futures[future]
+                        per_reg_scores[:, fold_index, :] = future.result()
+                        if progress_bar is not None:
+                            progress_bar.update(len(feature_regularization_values))
         finally:
             if progress_bar is not None:
                 progress_bar.close()

@@ -33,6 +33,8 @@ practical with `FrequencyTRF`:
   Optional multi-taper estimation with `R^2`, transfer-function plots, cross spectra, and coherence.
 - `example_frequency_resolved_weights.py`
   Spectrogram-like frequency-resolved view of one recovered kernel, shown as both signed weights and Hilbert-envelope power.
+- `example_mtrf_sample_eeg.py`
+  Optional real-data comparison against the public mTRF speech EEG sample, with held-out prediction traces, held-out GFP, and a sorted channel-wise Pearson comparison.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -66,6 +68,12 @@ python examples/example_backward_decoding.py
 python examples/example_bootstrap_confidence_interval.py
 python examples/example_trial_weighting.py
 python examples/example_save_and_load.py
+```
+
+Optional compare-environment example:
+
+```bash
+pixi run -e compare python examples/example_mtrf_sample_eeg.py
 ```
 
 Run the comparison demo with Pixi:
