@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Callable, Sequence
 
 import numpy as np
-from scipy.signal import fftconvolve
+from scipy.fft import next_fast_len
 
 from .spectral import (
     _SpectralCache,
@@ -17,6 +18,15 @@ from .spectral import (
     _solve_transfer_function,
 )
 from .utils import _resolve_n_jobs
+
+@dataclass(slots=True)
+class _PreparedPredictionTrial:
+    """Cached FFT representation of one predictor trial for repeated predictions."""
+
+    predictor_fft: np.ndarray
+    output_length: int
+    convolution_length: int
+    fft_length: int
 
 
 def _extract_impulse_response(
@@ -136,22 +146,80 @@ def _compute_bootstrap_interval_from_cache(
     return interval, times
 
 
-def _shifted_convolution(
-    signal_in: np.ndarray,
-    kernel: np.ndarray,
+def _prepare_prediction_trials(
+    predictor_trials: Sequence[np.ndarray],
+    *,
+    n_lags: int,
+) -> list[_PreparedPredictionTrial]:
+    """Cache predictor FFTs so repeated predictions only transform kernels."""
+
+    prepared_trials: list[_PreparedPredictionTrial] = []
+    for predictor_trial in predictor_trials:
+        output_length = int(predictor_trial.shape[0])
+        convolution_length = output_length + int(n_lags) - 1
+        fft_length = next_fast_len(convolution_length)
+        prepared_trials.append(
+            _PreparedPredictionTrial(
+                predictor_fft=np.fft.rfft(predictor_trial, n=fft_length, axis=0),
+                output_length=output_length,
+                convolution_length=convolution_length,
+                fft_length=fft_length,
+            )
+        )
+    return prepared_trials
+
+
+def _predict_prepared_trials_from_weights(
+    prepared_trials: Sequence[_PreparedPredictionTrial],
+    *,
+    weights: np.ndarray,
     lag_start: int,
-    out_length: int,
-) -> np.ndarray:
-    full = fftconvolve(signal_in, kernel, mode="full")
+) -> list[np.ndarray]:
+    """Generate predictions from cached predictor FFTs and time-domain weights."""
+
+    weights = np.asarray(weights, dtype=float)
+    if weights.ndim != 3:
+        raise ValueError("weights must have shape (n_inputs, n_lags, n_outputs).")
+
+    _, _, n_outputs = weights.shape
+    kernel = np.transpose(weights, (1, 0, 2))
+    kernel_fft_cache: dict[int, np.ndarray] = {}
+    predictions: list[np.ndarray] = []
     offset = -lag_start
 
-    prediction = np.zeros(out_length, dtype=float)
-    src_start = max(offset, 0)
-    dst_start = max(-offset, 0)
-    length = min(full.shape[0] - src_start, out_length - dst_start)
-    if length > 0:
-        prediction[dst_start : dst_start + length] = full[src_start : src_start + length]
-    return prediction
+    for prepared_trial in prepared_trials:
+        if prepared_trial.predictor_fft.shape[1] != weights.shape[0]:
+            raise ValueError(
+                "weights and predictor trials must agree on the number of input channels/features."
+            )
+        kernel_fft = kernel_fft_cache.get(prepared_trial.fft_length)
+        if kernel_fft is None:
+            kernel_fft = np.fft.rfft(kernel, n=prepared_trial.fft_length, axis=0)
+            kernel_fft_cache[prepared_trial.fft_length] = kernel_fft
+
+        full_prediction = np.fft.irfft(
+            np.einsum(
+                "fi,fio->fo",
+                prepared_trial.predictor_fft,
+                kernel_fft,
+                optimize=True,
+            ),
+            n=prepared_trial.fft_length,
+            axis=0,
+        )[: prepared_trial.convolution_length]
+
+        prediction = np.zeros((prepared_trial.output_length, n_outputs), dtype=float)
+        src_start = max(offset, 0)
+        dst_start = max(-offset, 0)
+        length = min(
+            full_prediction.shape[0] - src_start,
+            prepared_trial.output_length - dst_start,
+        )
+        if length > 0:
+            prediction[dst_start : dst_start + length] = full_prediction[src_start : src_start + length]
+        predictions.append(prediction)
+
+    return predictions
 
 
 def _predict_trials_from_weights(
@@ -164,21 +232,15 @@ def _predict_trials_from_weights(
     if weights.ndim != 3:
         raise ValueError("weights must have shape (n_inputs, n_lags, n_outputs).")
 
-    n_inputs, _, n_outputs = weights.shape
-    kernel = np.transpose(weights, (1, 0, 2))
-    predictions: list[np.ndarray] = []
-    for predictor_trial in predictor_trials:
-        prediction = np.zeros((predictor_trial.shape[0], n_outputs), dtype=float)
-        for input_index in range(n_inputs):
-            for output_index in range(n_outputs):
-                prediction[:, output_index] += _shifted_convolution(
-                    predictor_trial[:, input_index],
-                    kernel[:, input_index, output_index],
-                    lag_start=lag_start,
-                    out_length=predictor_trial.shape[0],
-                )
-        predictions.append(prediction)
-    return predictions
+    prepared_trials = _prepare_prediction_trials(
+        predictor_trials,
+        n_lags=weights.shape[1],
+    )
+    return _predict_prepared_trials_from_weights(
+        prepared_trials,
+        weights=weights,
+        lag_start=lag_start,
+    )
 
 
 def _score_prediction_trials(
@@ -212,6 +274,11 @@ def _score_regularization_grid_for_fold(
         dtype=float,
     )
     lag_start = int(round(float(tmin) * float(fs)))
+    lag_stop = int(round(float(tmax) * float(fs)))
+    prepared_predictors = _prepare_prediction_trials(
+        val_predictors,
+        n_lags=lag_stop - lag_start,
+    )
     scalar_grid = _scalar_regularization_grid(feature_regularization_values)
     scalar_decomposition = (
         _prepare_scalar_ridge_decomposition(cxx, cxy)
@@ -234,8 +301,8 @@ def _score_regularization_grid_for_fold(
             tmin=float(tmin),
             tmax=float(tmax),
         )
-        predictions = _predict_trials_from_weights(
-            val_predictors,
+        predictions = _predict_prepared_trials_from_weights(
+            prepared_predictors,
             weights=weights,
             lag_start=lag_start,
         )

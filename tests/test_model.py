@@ -7,9 +7,11 @@ from typing import Sequence
 
 import fftrf
 import fftrf.estimator as estimator_module
+import fftrf.prediction as prediction_module
 import fftrf.spectral as spectral_module
 import numpy as np
 import pytest
+from scipy.signal import fftconvolve
 
 from fftrf import (
     FrequencyResolvedWeights,
@@ -19,6 +21,7 @@ from fftrf import (
     explained_variance_score,
     half_wave_rectify,
     inverse_variance_weights,
+    pearsonr,
     r2_score,
     resample_signal,
 )
@@ -83,6 +86,94 @@ def _direct_transfer_function(
             cxy[frequency_index],
         )
     return transfer_function
+def _shifted_convolution_reference(
+    signal_in: np.ndarray,
+    kernel: np.ndarray,
+    *,
+    lag_start: int,
+    out_length: int,
+) -> np.ndarray:
+    full = fftconvolve(signal_in, kernel, mode="full")
+    offset = -lag_start
+
+    prediction = np.zeros(out_length, dtype=float)
+    src_start = max(offset, 0)
+    dst_start = max(-offset, 0)
+    length = min(full.shape[0] - src_start, out_length - dst_start)
+    if length > 0:
+        prediction[dst_start : dst_start + length] = full[src_start : src_start + length]
+    return prediction
+
+
+def _predict_trials_from_weights_reference(
+    predictor_trials: Sequence[np.ndarray],
+    *,
+    weights: np.ndarray,
+    lag_start: int,
+) -> list[np.ndarray]:
+    weights = np.asarray(weights, dtype=float)
+    n_inputs, _, n_outputs = weights.shape
+    kernel = np.transpose(weights, (1, 0, 2))
+
+    predictions: list[np.ndarray] = []
+    for predictor_trial in predictor_trials:
+        prediction = np.zeros((predictor_trial.shape[0], n_outputs), dtype=float)
+        for input_index in range(n_inputs):
+            for output_index in range(n_outputs):
+                prediction[:, output_index] += _shifted_convolution_reference(
+                    predictor_trial[:, input_index],
+                    kernel[:, input_index, output_index],
+                    lag_start=lag_start,
+                    out_length=predictor_trial.shape[0],
+                )
+        predictions.append(prediction)
+    return predictions
+
+
+def _score_regularization_grid_for_fold_reference(
+    *,
+    cxx: np.ndarray,
+    cxy: np.ndarray,
+    val_predictors: Sequence[np.ndarray],
+    val_targets: Sequence[np.ndarray],
+    feature_regularization_values: Sequence[np.ndarray],
+    fs: float,
+    n_fft: int,
+    tmin: float,
+    tmax: float,
+    metric,
+) -> np.ndarray:
+    scores = np.zeros((len(feature_regularization_values), val_targets[0].shape[1]), dtype=float)
+    lag_start = int(round(float(tmin) * float(fs)))
+    scalar_grid = spectral_module._scalar_regularization_grid(feature_regularization_values)
+    scalar_decomposition = (
+        spectral_module._prepare_scalar_ridge_decomposition(cxx, cxy)
+        if scalar_grid is not None
+        else None
+    )
+
+    for reg_index, feature_regularization in enumerate(feature_regularization_values):
+        transfer_function = spectral_module._solve_transfer_function(
+            cxx,
+            cxy,
+            feature_regularization=feature_regularization,
+            scalar_decomposition=scalar_decomposition,
+            scalar_regularization=None if scalar_grid is None else float(scalar_grid[reg_index]),
+        )
+        weights, _ = prediction_module._extract_impulse_response(
+            transfer_function,
+            fs=float(fs),
+            n_fft=n_fft,
+            tmin=float(tmin),
+            tmax=float(tmax),
+        )
+        predictions = _predict_trials_from_weights_reference(
+            val_predictors,
+            weights=weights,
+            lag_start=lag_start,
+        )
+        scores[reg_index, :] = prediction_module._score_prediction_trials(metric, val_targets, predictions)
+    return scores
 
 
 def test_frequency_trf_recovers_impulse_response() -> None:
@@ -378,6 +469,176 @@ def test_cross_validation_n_jobs_matches_serial_results() -> None:
     assert parallel.regularization == serial.regularization
     assert np.allclose(parallel.weights, serial.weights, rtol=1e-10, atol=1e-12)
     assert np.allclose(parallel.transfer_function, serial.transfer_function, rtol=1e-10, atol=1e-12)
+
+
+def test_predict_trials_from_weights_matches_reference_convolution() -> None:
+    rng = np.random.default_rng(135)
+    predictor_trials = [
+        rng.standard_normal((257, 3)),
+        rng.standard_normal((191, 3)),
+    ]
+    weights = rng.standard_normal((3, 17, 2))
+
+    optimized = prediction_module._predict_trials_from_weights(
+        predictor_trials,
+        weights=weights,
+        lag_start=-4,
+    )
+    reference = _predict_trials_from_weights_reference(
+        predictor_trials,
+        weights=weights,
+        lag_start=-4,
+    )
+
+    assert len(optimized) == len(reference)
+    for optimized_trial, reference_trial in zip(optimized, reference, strict=True):
+        assert np.allclose(optimized_trial, reference_trial, rtol=1e-10, atol=1e-12)
+
+
+def test_cross_validation_fold_scorer_matches_reference() -> None:
+    rng = np.random.default_rng(136)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[3] = 0.9
+    kernel[8] = -0.35
+    kernel[15] = 0.12
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=8,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    spectral_cache = estimator_module._build_spectral_cache(
+        stimulus,
+        response,
+        segment_length=512,
+        overlap=0.5,
+        n_fft=None,
+        spectral_method="standard",
+        time_bandwidth=3.5,
+        n_tapers=None,
+        window=None,
+        detrend="constant",
+    )
+    val_idx = np.array([1, 5])
+    train_weights = np.ones(len(stimulus), dtype=float)
+    train_weights[val_idx] = 0.0
+    cxx, cxy = estimator_module._aggregate_cached_spectra(
+        spectral_cache,
+        raw_trial_weights=train_weights,
+    )
+
+    feature_regularization_values = [
+        np.full(stimulus[0].shape[1], value, dtype=float)
+        for value in np.logspace(-5, 0, 6)
+    ]
+    val_predictors = [stimulus[i] for i in val_idx]
+    val_targets = [response[i] for i in val_idx]
+
+    optimized = prediction_module._score_regularization_grid_for_fold(
+        cxx=cxx,
+        cxy=cxy,
+        val_predictors=val_predictors,
+        val_targets=val_targets,
+        feature_regularization_values=feature_regularization_values,
+        fs=float(fs),
+        n_fft=spectral_cache.n_fft,
+        tmin=0.0,
+        tmax=0.030,
+        metric=pearsonr,
+    )
+    reference = _score_regularization_grid_for_fold_reference(
+        cxx=cxx,
+        cxy=cxy,
+        val_predictors=val_predictors,
+        val_targets=val_targets,
+        feature_regularization_values=feature_regularization_values,
+        fs=float(fs),
+        n_fft=spectral_cache.n_fft,
+        tmin=0.0,
+        tmax=0.030,
+        metric=pearsonr,
+    )
+
+    assert np.allclose(optimized, reference, rtol=1e-10, atol=1e-12)
+
+
+def test_banded_cross_validation_fold_scorer_matches_reference() -> None:
+    rng = np.random.default_rng(137)
+    fs = 1_000
+    kernels = [
+        np.array([0.0, 0.9, -0.3, 0.15]),
+        np.array([0.0, 0.05, 0.02, 0.0]),
+    ]
+    stimulus, response = _simulate_multifeature_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernels=kernels,
+        noise_scale=0.04,
+    )
+
+    spectral_cache = estimator_module._build_spectral_cache(
+        stimulus,
+        response,
+        segment_length=512,
+        overlap=0.5,
+        n_fft=None,
+        spectral_method="standard",
+        time_bandwidth=3.5,
+        n_tapers=None,
+        window=None,
+        detrend="constant",
+    )
+    val_idx = np.array([0, 4])
+    train_weights = np.ones(len(stimulus), dtype=float)
+    train_weights[val_idx] = 0.0
+    cxx, cxy = estimator_module._aggregate_cached_spectra(
+        spectral_cache,
+        raw_trial_weights=train_weights,
+    )
+
+    feature_regularization_values = [
+        np.array(candidate, dtype=float)
+        for candidate in [
+            (1e-4, 1e-4),
+            (1e-4, 1e-1),
+            (1e-1, 1e-4),
+            (1e-1, 1e-1),
+        ]
+    ]
+    val_predictors = [stimulus[i] for i in val_idx]
+    val_targets = [response[i] for i in val_idx]
+
+    optimized = prediction_module._score_regularization_grid_for_fold(
+        cxx=cxx,
+        cxy=cxy,
+        val_predictors=val_predictors,
+        val_targets=val_targets,
+        feature_regularization_values=feature_regularization_values,
+        fs=float(fs),
+        n_fft=spectral_cache.n_fft,
+        tmin=0.0,
+        tmax=0.004,
+        metric=pearsonr,
+    )
+    reference = _score_regularization_grid_for_fold_reference(
+        cxx=cxx,
+        cxy=cxy,
+        val_predictors=val_predictors,
+        val_targets=val_targets,
+        feature_regularization_values=feature_regularization_values,
+        fs=float(fs),
+        n_fft=spectral_cache.n_fft,
+        tmin=0.0,
+        tmax=0.004,
+        metric=pearsonr,
+    )
+
+    assert np.allclose(optimized, reference, rtol=1e-10, atol=1e-12)
 
 
 def test_segment_duration_alias_matches_segment_length() -> None:

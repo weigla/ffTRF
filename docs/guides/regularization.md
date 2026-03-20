@@ -52,6 +52,13 @@ In this mode:
 - the final model is refit on all supplied trials using that best candidate
 - the candidate grid is stored in `model.regularization_candidates`
 
+Internally, `ffTRF` builds the trial spectra once, then reuses them across
+folds and regularization candidates. During validation scoring it also caches
+predictor FFTs within each fold, so repeated candidate evaluation avoids
+rebuilding the same prediction-side transforms. This applies to both scalar
+ridge and banded regularization searches and does not change the selected
+solution or the returned scores.
+
 ## The Meaning of `average`
 
 The `average` argument controls how scores are reduced across outputs:
@@ -96,7 +103,9 @@ Example interpretation of `bands=[1, 16]`:
 - next 16 features belong to group 2
 
 In banded mode, `ffTRF` expands the chosen coefficients into a per-feature
-penalty vector internally.
+penalty vector internally. Cross-validation still reuses the same cached fold
+spectra and validation predictor FFTs, so the banded search stays much cheaper
+than rebuilding the full prediction path from scratch for every candidate.
 
 The example below shows how grouped predictors can produce visibly different
 kernel structure when each block receives its own regularization strength:

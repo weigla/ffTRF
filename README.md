@@ -27,27 +27,33 @@ peak RSS in isolated worker processes, and reports held-out Pearson
 correlation on a separate simulation split. The latest full report generated
 with `pixi run -e compare benchmark-demo` is stored in
 [`artifacts/runtime_benchmark.md`](artifacts/runtime_benchmark.md).
+Cross-validated `TRF` fits now also batch validation-time prediction by caching
+predictor FFTs within each fold, so the CV-heavy rows better reflect the
+current implementation rather than the older per-kernel convolution path.
 
 Representative results on Apple M3, Python 3.13, NumPy 2.4, SciPy 1.17, and
 mTRF 2.1:
 
 | Scenario | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2827 | 0.3018 | 1.07x | 104.7 | 540.4 | 0.9990 | 0.9990 |
-| Longer lag window (`600` lags) | 0.1429 | 0.3478 | 2.43x | 100.2 | 542.1 | 0.9989 | 0.9989 |
-| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1660 | 1.1965 | 7.21x | 105.8 | 367.6 | 0.9989 | 0.9990 |
-| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0240 | 0.2828 | 11.76x | 99.6 | 539.4 | 0.9989 | 0.9990 |
-| EEG-scale forward model (`16 -> 102`) | 0.0547 | 0.0832 | 1.52x | 163.3 | 220.6 | 0.9450 | 0.9293 |
-| 102-channel backward decoder (`102 -> 1`) | 0.3029 | 3.0364 | 10.02x | 355.6 | 1086.8 | 0.9813 | 0.8695 |
+| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2890 | 0.4018 | 1.39x | 104.7 | 535.0 | 0.9990 | 0.9990 |
+| Longer lag window (`600` lags) | 0.1426 | 0.4262 | 2.99x | 100.0 | 542.1 | 0.9989 | 0.9989 |
+| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1641 | 1.4940 | 9.10x | 109.9 | 365.0 | 0.9989 | 0.9990 |
+| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0246 | 0.2774 | 11.27x | 100.5 | 539.2 | 0.9989 | 0.9990 |
+| EEG-scale forward model (`16 -> 102`) | 0.0605 | 0.0994 | 1.64x | 162.4 | 237.3 | 0.9450 | 0.9293 |
+| 102-channel backward decoder (`102 -> 1`) | 0.3434 | 3.1959 | 9.31x | 355.5 | 1147.3 | 0.9813 | 0.8695 |
 
 The benchmark outcome is not "ffTRF is always faster." In the small fixed-ridge
 1-to-1 cases, mTRF can be comparable or faster. The main pattern is that ffTRF
 pulls ahead once lag count, channel count, CV grid size, or segmented spectral
 workflows get heavy, and the memory advantage becomes much clearer in those
 same regimes. In the current benchmark runs, the most pronounced gains are the
-cross-validated ridge case (`7.21x`), the segmented Hann workflow (`11.76x`),
-and the 102-channel backward decoder (`10.02x`), all while preserving very
-similar or better held-out accuracy.
+cross-validated ridge case (`9.10x`), the segmented Hann workflow (`11.27x`),
+and the 102-channel backward decoder (`9.31x`), all while preserving very
+similar or better held-out accuracy. The improved CV row is especially
+relevant for current `ffTRF`: validation predictors are now transformed once
+per fold and reused across lambda candidates, which lowers CV scoring cost
+without changing the selected model or the reported scores.
 
 ## Real EEG Comparison
 

@@ -40,3 +40,17 @@ pip install -e ".[docs]"
 
 `src/fftrf/model.py` remains as a thin import surface inside the package, while
 the main implementation lives in the smaller submodules above.
+
+## Performance Notes
+
+Cross-validation performance relies on two different kinds of reuse:
+
+- `src/fftrf/spectral.py` caches per-trial spectral sufficient statistics so
+  folds and ridge candidates do not repeat FFT-based training statistics.
+- `src/fftrf/prediction.py` now caches validation-side predictor FFTs within
+  each fold, so repeated candidate scoring reuses the same transformed
+  predictors instead of recomputing one convolution per input/output kernel.
+
+That second optimization is especially relevant for larger CV grids and banded
+regularization, because it lowers scoring cost without changing any public API,
+fit result, or score value.
