@@ -4,6 +4,14 @@
 expects observed and predicted arrays with shape `(n_samples, n_outputs)` and
 returns one score per output column before any optional averaging.
 
+These metrics are used for:
+
+- `predict(..., response=...)` and `score(...)`
+- choosing the best regularization value during cross-validation
+
+They are not alternative fitting objectives. The TRF itself is always fitted
+with the same ridge-regularized spectral solver.
+
 ## Built-In Metrics
 
 - `pearsonr`: default correlation-based score

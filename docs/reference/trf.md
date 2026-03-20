@@ -19,7 +19,10 @@ model = TRF(direction=-1)
 ```
 
 The `metric` argument controls how predictions are scored whenever you call
-`predict(...)` with observed targets or `score(...)`.
+`predict(...)` with observed targets or `score(...)`. It is also the criterion
+used to pick the best regularization value during cross-validation. It does not
+change the actual fitting objective, which remains ridge-regularized
+frequency-domain TRF estimation.
 
 ## Common Parameter Meanings
 

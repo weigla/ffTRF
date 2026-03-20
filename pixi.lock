@@ -1409,7 +1409,7 @@ packages:
 - pypi: .
   name: fftrf
   version: 0.1.0
-  sha256: 675687285d0f0ca6a3ac7775a8dfe105b14dd818862e20950aa5b66033566720
+  sha256: 71cf9aadd30d9116037627b72062a4dc61056c1758ee19578ed7e594e5579e82
   requires_dist:
   - numpy>=1.26
   - scipy>=1.12
