@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Benchmark ``TRF`` from ``ffTRF`` against a time-domain ``mTRFpy`` fit.
+"""Benchmark ``TRF`` from ``ffTRF`` against a time-domain ``mTRF`` fit.
 
 The benchmark is intentionally simple and reproducible:
 
 - simulate continuous stimulus/response pairs from a known kernel
 - fit ``fftrf.TRF`` with a fixed ridge value
-- fit ``mTRFpy`` with the same lag window and regularization
+- fit ``mTRF`` with the same lag window and regularization
 - report median training time, per-fit peak memory, and held-out prediction
   accuracy across repeated runs
 
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark TRF against mTRFpy and emit a Markdown summary."
+            "Benchmark ffTRF against mTRF and emit a Markdown summary."
         )
     )
     parser.add_argument(
@@ -229,7 +229,7 @@ def fit_mtrf(
     response: list[np.ndarray],
     scenario: BenchmarkScenario,
 ):
-    """Fit ``mTRFpy`` for one scenario."""
+    """Fit ``mTRF`` for one scenario."""
 
     TRF = get_mtrf_class()
 
@@ -250,7 +250,7 @@ def fit_mtrf(
 
 
 def get_mtrf_class():
-    """Import and cache the ``mTRFpy`` estimator class."""
+    """Import and cache the ``mTRF`` estimator class."""
 
     global _MTRF_TRF
     if _MTRF_TRF is None:
@@ -614,7 +614,7 @@ def format_report(
         f"- Python: {python_version}",
         f"- NumPy: {numpy_version}",
         f"- SciPy: {scipy_version}",
-        f"- mTRFpy: {mtrf_version}",
+        f"- mTRF: {mtrf_version}",
         f"- Timed repetitions: {repeats}",
         f"- Warmup runs: {warmup}",
         "- Peak memory: median per-fit peak RSS measured in isolated worker processes",
@@ -626,7 +626,7 @@ def format_report(
         "Held-out prediction scores are mean Pearson correlations over outputs.",
         "Kernel correlation is computed over the flattened full kernel bank.",
         "",
-        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | TRF median fit (s) | TRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | Speedup | ffTRF held-out r | mTRFpy held-out r | Kernel corr. |",
+        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | ffTRF median fit (s) | ffTRF peak RSS (MiB) | mTRF median fit (s) | mTRF peak RSS (MiB) | Speedup | ffTRF held-out r | mTRF held-out r | Kernel corr. |",
         "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
@@ -658,12 +658,14 @@ def format_report(
             "",
             "Interpretation:",
             "- The approximate lag-matrix size is shown because it dominates the memory footprint of a standard time-domain fit and grows with both lag count and predictor count.",
-            "- `ffTRF held-out r` and `mTRFpy held-out r` are the main accuracy columns: they measure mean Pearson correlation on a separate held-out simulation split generated from the same ground-truth kernel.",
+            "- `ffTRF held-out r` and `mTRF held-out r` are the main accuracy columns: they measure mean Pearson correlation on a separate held-out simulation split generated from the same ground-truth kernel.",
             "- Kernel correlations close to 1 indicate that the two methods recover nearly the same flattened kernel bank. This is most interpretable for forward models; backward decoders can differ more in weight space while still making very similar predictions.",
             "- Direct fixed-lambda `TRF` fits now use an aggregated lower-memory spectral path automatically, so the fixed-ridge rows reflect the lighter-weight solver rather than the heavier CV cache path.",
-            "- Cached spectra matter most in the cross-validated scenario because `TRF` can reuse FFT work across lambda candidates, even if that does not automatically make it faster than `mTRFpy` on every machine.",
+            "- The key outcome is not a universal speed win. Short, simple fixed-ridge 1-to-1 fits can be similar to or slower than mTRF, while larger lag counts, CV grids, segmented spectra, and high-dimensional decoders favor ffTRF much more strongly.",
+            "- Cached spectra matter most in the cross-validated scenario because `TRF` can reuse FFT work across lambda candidates, even if that does not automatically make it faster than `mTRF` on every machine.",
             "- The segmented Hann scenario is intentionally not the closest mTRF-like setting; it shows the cost of a more typical spectral-estimation workflow.",
             "- The EEG-scale forward and 102-channel backward rows show how the trade-off changes once the output side becomes sensor-rich or the backward decoder has many predictor channels.",
+            "- Memory is part of the story: the main practical advantage of ffTRF often shows up as a combination of competitive runtime and much lower peak RSS once the implied lag matrix would become large.",
             "- Peak RSS is measured per fit in a fresh worker process, so the reported memory is not inflated by earlier benchmark runs.",
         ]
     )
@@ -684,7 +686,7 @@ def main() -> None:
                 metadata.version("mtrf")
             except metadata.PackageNotFoundError as exc:
                 raise SystemExit(
-                    "mTRFpy is required for the mTRF benchmark worker."
+                    "mTRF is required for the mTRF benchmark worker."
                 ) from exc
         payload = run_worker_once(
             args.worker_scenario_index,
@@ -697,7 +699,7 @@ def main() -> None:
         metadata.version("mtrf")
     except metadata.PackageNotFoundError as exc:
         raise SystemExit(
-            "mTRFpy is required for this benchmark. Install it with "
+            "mTRF is required for this benchmark. Install it with "
             '`pip install mtrf` or use `pixi run -e compare`.'
         ) from exc
 

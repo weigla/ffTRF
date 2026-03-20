@@ -37,6 +37,8 @@ frequency-domain views without retraining.
 ## Start Here
 
 - New to the package: go to [Getting Started](getting-started.md)
+- Prefer a tutorial you can read like a lab notebook: go to
+  [Getting Started Notebook](notebooks/getting-started.ipynb)
 - Need the full workflow explained end to end: go to
   [Core Workflow](guides/core-workflow.md)
 - Need shape conventions and multi-trial rules: go to
@@ -100,6 +102,8 @@ That has a few practical consequences:
   spectral inspection tools
 - [Trial Weighting and Bootstrap](guides/trial-weighting-and-bootstrap.md):
   weighting noisy trials and quantifying uncertainty
+- [Notebooks](notebooks/getting-started.ipynb): rendered walk-throughs with the
+  same API used in the example scripts
 - [Reference](reference/index.md): detailed function-by-function API
 
 ## Example Gallery
@@ -115,3 +119,7 @@ That has a few practical consequences:
 ### Frequency-Resolved Weights
 
 ![Frequency-resolved weights](images/examples/frequency_resolved_weights.png)
+
+### Real EEG Comparison
+
+![Real EEG comparison](images/examples/mtrf_sample_eeg_comparison.png)

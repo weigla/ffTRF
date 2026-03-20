@@ -81,6 +81,12 @@ one output channel.
 - phase shows whether they align or lag relative to each other in the spectral
   domain
 
+The public EEG comparison example in the repository is a useful sanity check
+for these diagnostics because it puts the recovered kernels next to a
+time-domain reference implementation:
+
+![Real EEG comparison example](../images/examples/mtrf_sample_eeg_comparison.png)
+
 ## When to Use Which Tool
 
 - Use `plot(...)` when you mainly care about lag-domain kernel shape.

@@ -24,6 +24,7 @@ compare = [
 ]
 docs = [
   "mkdocs>=1.6",
+  "mkdocs-jupyter>=0.25",
   "mkdocs-material>=9.5",
   "mkdocstrings>=0.28",
   "mkdocstrings-python>=1.12",
@@ -58,6 +59,7 @@ mtrf = ">=2.0"
 
 [tool.pixi.feature.docs-site.pypi-dependencies]
 mkdocs = ">=1.6"
+mkdocs-jupyter = ">=0.25"
 mkdocs-material = ">=9.5"
 mkdocstrings = ">=0.28"
 mkdocstrings-python = ">=1.12"

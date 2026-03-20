@@ -24,6 +24,10 @@ fig, ax = model.plot_frequency_resolved_weights(
 This produces a frequency-by-lag map for one input/output pair while leaving
 the ordinary kernel available in `model.weights`.
 
+Example output from the bundled frequency-resolved workflow:
+
+![Frequency-resolved weights example](../images/examples/frequency_resolved_weights.png)
+
 ## What the Parameters Mean
 
 - `n_bands`: number of analysis bands
@@ -86,3 +90,6 @@ The estimator also exposes direct frequency-domain views:
 - `cross_spectral_diagnostics(...)`
 - `plot_coherence(...)`
 - `plot_cross_spectrum(...)`
+
+If you want the same workflow in a more tutorial-like format, see the rendered
+[Frequency-Resolved Notebook](../notebooks/frequency-resolved.ipynb).

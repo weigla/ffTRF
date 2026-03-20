@@ -67,7 +67,7 @@ class TRF:
     Estimate stimulus-response mappings in the frequency domain.
 
     ``TRF`` is the main estimator of this toolbox. Its public API is
-    intentionally close to ``mTRFpy``:
+    intentionally close to ``mTRF``:
 
     - call :meth:`train` to fit the model
     - call :meth:`predict` to generate predicted responses or stimuli
@@ -256,7 +256,7 @@ class TRF:
 
             When ``bands`` is provided, each feature group gets its own ridge
             coefficient. In that mode, a 1D scalar sequence follows the
-            ``mTRFpy`` banded-ridge convention: the Cartesian product across
+            ``mTRF`` banded-ridge convention: the Cartesian product across
             bands is evaluated during cross-validation. You can also pass an
             explicit sequence of per-band coefficient tuples.
         bands:

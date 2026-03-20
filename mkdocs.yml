@@ -9,6 +9,11 @@ theme:
 
 plugins:
   - search
+  - mkdocs-jupyter:
+      execute: false
+      include:
+        - "*.ipynb"
+      include_source: true
   - mkdocstrings:
       handlers:
         python:
@@ -35,6 +40,9 @@ nav:
       - Diagnostics and Transfer Functions: guides/diagnostics-and-transfer-functions.md
       - Trial Weighting and Bootstrap: guides/trial-weighting-and-bootstrap.md
   - Examples: examples.md
+  - Notebooks:
+      - Getting Started Notebook: notebooks/getting-started.ipynb
+      - Frequency-Resolved Notebook: notebooks/frequency-resolved.ipynb
   - Reference:
       - Overview: reference/index.md
       - TRF Estimator: reference/trf.md

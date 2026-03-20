@@ -71,6 +71,11 @@ prediction, score = model.predict(stimulus=stimulus, response=response)
 fig, ax = model.plot(input_index=0, output_index=0)
 ```
 
+The kind of lag-domain kernel this produces is shown below for the bundled
+multi-trial example workflow:
+
+![Multi-trial kernel example](images/examples/multi_trial_single_channel.png)
+
 ## What This Example Is Doing
 
 - `stimulus` and `response` are lists of arrays, so the fit runs in
@@ -169,3 +174,5 @@ setting.
 - Explore spectral inspection tools in
   [Diagnostics and Transfer Functions](guides/diagnostics-and-transfer-functions.md)
 - Browse runnable scripts in [Examples](examples.md)
+- Open the rendered tutorial in
+  [Getting Started Notebook](notebooks/getting-started.ipynb)

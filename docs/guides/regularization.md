@@ -98,6 +98,11 @@ Example interpretation of `bands=[1, 16]`:
 In banded mode, `ffTRF` expands the chosen coefficients into a per-feature
 penalty vector internally.
 
+The example below shows how grouped predictors can produce visibly different
+kernel structure when each block receives its own regularization strength:
+
+![Banded regularization example](../images/examples/banded_regularization.png)
+
 ## Segment Choices Matter Too
 
 Regularization is not the only stability control. Segment settings matter as

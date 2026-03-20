@@ -21,7 +21,7 @@ long lag windows, cross-validated ridge grids, segmented spectral estimation,
 and high-dimensional forward or backward models.
 
 The benchmark in [`examples/benchmark_runtime.py`](examples/benchmark_runtime.py)
-compares `fftrf.TRF` against `mTRFpy` on identical simulated data, measures
+compares `ffTRF` against `mTRF` on identical simulated data, measures
 median fit time over 3 timed repetitions after 1 warmup run, records per-fit
 peak RSS in isolated worker processes, and reports held-out Pearson
 correlation on a separate simulation split. The latest full report generated
@@ -29,22 +29,47 @@ with `pixi run -e compare benchmark-demo` is stored in
 [`artifacts/runtime_benchmark.md`](artifacts/runtime_benchmark.md).
 
 Representative results on Apple M3, Python 3.13, NumPy 2.4, SciPy 1.17, and
-mTRFpy 2.1:
+mTRF 2.1:
 
-| Scenario | TRF fit (s) | mTRFpy fit (s) | Speedup | TRF peak RSS (MiB) | mTRFpy peak RSS (MiB) | Held-out r |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2898 | 0.3141 | 1.08x | 105.6 | 539.5 | 0.9990 vs 0.9990 |
-| Longer lag window (`600` lags) | 0.1456 | 0.3894 | 2.67x | 100.4 | 543.0 | 0.9989 vs 0.9989 |
-| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1657 | 1.1865 | 7.16x | 107.1 | 368.0 | 0.9989 vs 0.9990 |
-| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0242 | 0.3048 | 12.60x | 99.3 | 540.2 | 0.9989 vs 0.9990 |
-| EEG-scale forward model (`16 -> 102`) | 0.0560 | 0.0695 | 1.24x | 163.6 | 220.5 | 0.9450 vs 0.9293 |
-| 102-channel backward decoder (`102 -> 1`) | 0.2996 | 3.0191 | 10.08x | 356.5 | 1107.8 | 0.9813 vs 0.8695 |
+| Scenario | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2827 | 0.3018 | 1.07x | 104.7 | 540.4 | 0.9990 | 0.9990 |
+| Longer lag window (`600` lags) | 0.1429 | 0.3478 | 2.43x | 100.2 | 542.1 | 0.9989 | 0.9989 |
+| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1660 | 1.1965 | 7.21x | 105.8 | 367.6 | 0.9989 | 0.9990 |
+| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0240 | 0.2828 | 11.76x | 99.6 | 539.4 | 0.9989 | 0.9990 |
+| EEG-scale forward model (`16 -> 102`) | 0.0547 | 0.0832 | 1.52x | 163.3 | 220.6 | 0.9450 | 0.9293 |
+| 102-channel backward decoder (`102 -> 1`) | 0.3029 | 3.0364 | 10.02x | 355.6 | 1086.8 | 0.9813 | 0.8695 |
 
-The short, fixed-ridge 1-to-1 cases are not always faster than `mTRFpy`, so
-the benchmark is not claiming a universal speed win. The main pattern is that
-`ffTRF` pulls ahead once the lag count, channel count, CV grid size, or
-segmented spectral workflow gets heavy, while also using substantially less
-memory in those scenarios.
+The benchmark outcome is not "ffTRF is always faster." In the small fixed-ridge
+1-to-1 cases, mTRF can be comparable or faster. The main pattern is that ffTRF
+pulls ahead once lag count, channel count, CV grid size, or segmented spectral
+workflows get heavy, and the memory advantage becomes much clearer in those
+same regimes. In the current benchmark runs, the most pronounced gains are the
+cross-validated ridge case (`7.21x`), the segmented Hann workflow (`11.76x`),
+and the 102-channel backward decoder (`10.02x`), all while preserving very
+similar or better held-out accuracy.
+
+## Real EEG Comparison
+
+The repository also includes a comparison on the official speech-EEG sample
+dataset used by the mTRF ecosystem:
+
+```bash
+pixi run -e compare python examples/example_mtrf_sample_eeg.py
+```
+
+On the current run with 7 training segments, 3 held-out test segments, a
+5-fold CV grid over 17 lambdas, and a 0 to 400 ms forward lag window:
+
+| Dataset | ffTRF selected lambda | mTRF selected lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r | ffTRF CV fit (s) | mTRF CV fit (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Official speech EEG sample (`16 -> 128`, `fs=128 Hz`) | 0.0001 | 10000 | 0.0235 | 0.0185 | 0.0253 | 0.0147 | 15.1023 | 2.7373 |
+
+That real-data example is useful as a sanity check rather than a pure runtime
+benchmark. In this setting, ffTRF produced better held-out channel
+correlations, while mTRF completed the CV fit faster. This is consistent with
+the synthetic benchmark story above: ffTRF's biggest performance wins show up
+most clearly once the lag-matrix burden becomes more extreme.
 
 ## Installation
 

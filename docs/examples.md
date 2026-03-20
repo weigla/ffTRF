@@ -25,8 +25,8 @@ example that matches their workflow.
 | Script | Use case |
 | --- | --- |
 | `compare_with_mtrf.py` | Synthetic kernel comparison against time-domain references |
-| `example_mtrf_sample_eeg.py` | Public speech-EEG comparison against `mTRFpy` |
-| `benchmark_runtime.py` | Runtime benchmark against `mTRFpy` under several scenarios |
+| `example_mtrf_sample_eeg.py` | Public speech-EEG comparison against `mTRF` |
+| `benchmark_runtime.py` | Runtime benchmark against `mTRF` under several scenarios |
 
 ## Which Example Should I Start With?
 
@@ -59,6 +59,17 @@ pixi run -e compare benchmark-demo
 pixi run -e compare python examples/example_mtrf_sample_eeg.py
 ```
 
+## Rendered Notebooks
+
+If you want a more tutorial-style presentation than the plain scripts, the docs
+site also renders lightweight notebooks:
+
+- [Getting Started Notebook](notebooks/getting-started.ipynb)
+- [Frequency-Resolved Notebook](notebooks/frequency-resolved.ipynb)
+
+These notebooks mirror the same public API as the scripts while interleaving
+code, explanation, and representative plots.
+
 ## What to Look For
 
 When reading the examples, pay attention to:
@@ -76,3 +87,5 @@ When reading the examples, pay attention to:
 ![Multifeature / multichannel example](images/examples/multifeature_multichannel_kernels.png)
 
 ![Multi-taper example](images/examples/multitaper_estimator.png)
+
+![Real EEG comparison](images/examples/mtrf_sample_eeg_comparison.png)

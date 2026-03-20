@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: compare ffTRF to mTRFpy on the public speech EEG sample."""
+"""Example: compare ffTRF to mTRF on the public speech EEG sample."""
 
 from __future__ import annotations
 
@@ -56,13 +56,13 @@ def fit_mtrf(
     k: int,
     seed: int,
 ):
-    """Fit the reference mTRFpy forward model with matched lag settings."""
+    """Fit the reference mTRF forward model with matched lag settings."""
 
     try:
         from mtrf.model import TRF
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "mTRFpy is required for this example. Use the compare extras or "
+            "mTRF is required for this example. Use the compare extras or "
             "the Pixi compare environment."
         ) from exc
 
@@ -120,7 +120,7 @@ def plot_prediction_trace(
         mtrf_prediction,
         color="#3366CC",
         linewidth=1.3,
-        label="mTRFpy",
+        label="mTRF",
     )
     ax.axhline(0.0, color="#999999", linewidth=0.8)
     ax.set_title(title)
@@ -143,7 +143,7 @@ def plot_channel_score_distribution(
     mtrf_sorted = mtrf_scores[channel_order]
 
     ax.plot(rank, fftrf_sorted, color="#0B6E4F", linewidth=1.8, label="ffTRF")
-    ax.plot(rank, mtrf_sorted, color="#3366CC", linewidth=1.6, label="mTRFpy")
+    ax.plot(rank, mtrf_sorted, color="#3366CC", linewidth=1.6, label="mTRF")
     ax.fill_between(
         rank,
         fftrf_sorted,
@@ -236,16 +236,16 @@ def main() -> None:
     print(f"  CV folds: {k_folds}")
     print(f"  CV seed: {cv_seed}")
     print(f"  ffTRF selected lambda: {fftrf_model.regularization}")
-    print(f"  mTRFpy selected lambda: {mtrf_model.regularization}")
+    print(f"  mTRF selected lambda: {mtrf_model.regularization}")
     print(f"  ffTRF CV scores: {np.array2string(np.asarray(fftrf_cv_scores), precision=4)}")
-    print(f"  mTRFpy CV scores: {np.array2string(np.asarray(mtrf_cv_scores), precision=4)}")
+    print(f"  mTRF CV scores: {np.array2string(np.asarray(mtrf_cv_scores), precision=4)}")
     print(f"  reference channel for prediction trace: {channel_index + 1}")
     print(f"  ffTRF mean held-out channel correlation: {float(fftrf_scores.mean()):.4f}")
-    print(f"  mTRFpy mean held-out channel correlation: {float(mtrf_scores.mean()):.4f}")
+    print(f"  mTRF mean held-out channel correlation: {float(mtrf_scores.mean()):.4f}")
     print(f"  ffTRF median held-out channel correlation: {float(np.median(fftrf_scores)):.4f}")
-    print(f"  mTRFpy median held-out channel correlation: {float(np.median(mtrf_scores)):.4f}")
+    print(f"  mTRF median held-out channel correlation: {float(np.median(mtrf_scores)):.4f}")
     print(f"  ffTRF CV fit time: {fftrf_seconds:.4f} s")
-    print(f"  mTRFpy CV fit time: {mtrf_seconds:.4f} s")
+    print(f"  mTRF CV fit time: {mtrf_seconds:.4f} s")
     print(f"  saved figure: {OUTPUT_PATH}")
 
     plt = require_matplotlib()
@@ -280,7 +280,7 @@ def main() -> None:
         (
             f"mean / median r\n"
             f"ffTRF: {float(fftrf_scores.mean()):.3f} / {float(np.median(fftrf_scores)):.3f}\n"
-            f"mTRFpy: {float(mtrf_scores.mean()):.3f} / {float(np.median(mtrf_scores)):.3f}\n"
+            f"mTRF: {float(mtrf_scores.mean()):.3f} / {float(np.median(mtrf_scores)):.3f}\n"
             f"λ_ffTRF: {float(fftrf_model.regularization):.0f}\n"
             f"λ_mTRF: {float(mtrf_model.regularization):.0f}"
         ),
