@@ -140,7 +140,20 @@ _METRIC_REGISTRY: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
 
 
 def available_metrics() -> tuple[str, ...]:
-    """Return the names of built-in scoring metrics."""
+    """Return the names of built-in scoring metrics.
+
+    Returns
+    -------
+    tuple of str
+        Sorted metric names that can be passed to ``TRF(metric=...)`` or used
+        when reconstructing a saved configuration.
+
+    Notes
+    -----
+    Some metrics intentionally expose both a short alias and a more explicit
+    function-style name, for example ``"r2"`` and ``"r2_score"``. They resolve
+    to the same scoring function.
+    """
 
     return tuple(sorted(_METRIC_REGISTRY))
 

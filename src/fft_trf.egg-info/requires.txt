@@ -1,8 +1,0 @@
-numpy>=1.26
-scipy>=1.12
-
-[compare]
-matplotlib>=3.8
-
-[test]
-pytest>=9

@@ -549,7 +549,49 @@ class TRF:
 
         This is a convenience wrapper around :meth:`train` for users who want
         a named multi-taper estimation path without manually setting
-        ``spectral_method="multitaper"``.
+        ``spectral_method="multitaper"`` and ``window=None`` themselves.
+
+        Parameters
+        ----------
+        stimulus, response, fs, tmin, tmax, regularization:
+            Identical to :meth:`train`.
+        bands:
+            Optional grouped-feature definition for banded ridge, exactly as in
+            :meth:`train`.
+        segment_length, segment_duration, overlap, n_fft:
+            Segmentation and FFT settings for the cross-spectral estimates.
+            These behave the same as in :meth:`train`.
+        time_bandwidth:
+            Time-bandwidth product of the DPSS tapers. Larger values create
+            broader spectral smoothing and permit more orthogonal tapers.
+        n_tapers:
+            Number of DPSS tapers to use. If omitted, the conventional
+            ``2 * time_bandwidth - 1`` rule is used.
+        detrend:
+            Optional per-segment detrending passed to the underlying spectral
+            estimator.
+        k, average, seed, show_progress, n_jobs:
+            Cross-validation controls with the same semantics as in
+            :meth:`train`.
+        trial_weights:
+            Optional trial weights used when aggregating training spectra.
+        bootstrap_samples, bootstrap_level, bootstrap_seed:
+            Optional trial-bootstrap interval settings with the same semantics
+            as in :meth:`train`.
+
+        Returns
+        -------
+        None or numpy.ndarray
+            Same return contract as :meth:`train`: ``None`` for a direct fit or
+            cross-validation scores when multiple regularization candidates are
+            evaluated.
+
+        Notes
+        -----
+        Multi-taper fitting is often useful when trial data are noisy or when
+        short segments make ordinary single-window spectra unstable. Because
+        the DPSS tapers already define the segment weighting, this wrapper
+        always disables the ordinary ``window`` parameter.
         """
 
         return self.train(
@@ -689,18 +731,24 @@ class TRF:
         ----------
         tmin, tmax:
             Optional lag window in seconds. If omitted, the window used during
-            :meth:`train` is reused.
+            :meth:`train` is reused. These values only control which portion of
+            the already fitted transfer function is transformed back to the lag
+            domain; they do not trigger a refit.
 
         Returns
         -------
         weights, times:
             ``weights`` has shape ``(n_inputs, n_lags, n_outputs)`` and ``times``
-            contains the corresponding lag values in seconds.
+            contains the corresponding lag values in seconds. The time axis is
+            sampled at the model's stored sampling rate.
 
         Notes
         -----
         This method is useful when you want to inspect a different lag window
-        without refitting the spectral model.
+        without refitting the spectral model. It is the same operation used
+        internally to populate :attr:`weights` and :attr:`times` after
+        training, and it powers downstream helpers such as :meth:`plot`,
+        :meth:`predict`, and :meth:`bootstrap_interval_at`.
         """
 
         if self.transfer_function is None or self.fs is None or self.n_fft is None:
@@ -741,18 +789,25 @@ class TRF:
         Parameters
         ----------
         input_index, output_index:
-            Select which input/output pair should be plotted.
+            Select which input/output pair should be plotted. ``input_index``
+            refers to the predictor feature dimension and ``output_index`` to
+            the predicted target channel.
         tmin, tmax:
             Optional lag window to visualize. If omitted, the fitted window is
-            used.
+            used. This is applied by re-extracting the impulse response from
+            the stored transfer function.
         ax:
-            Existing matplotlib axes. When omitted, a new figure is created.
+            Existing matplotlib axes. When omitted, a new figure and axes are
+            created.
         time_unit:
-            Either ``"ms"`` or ``"s"`` for the x-axis.
+            Either ``"ms"`` or ``"s"`` for the x-axis labels and plotted lag
+            values.
         color, linewidth, title, label:
             Standard matplotlib styling arguments for the kernel line.
         show_bootstrap_interval:
-            If ``True``, plot the stored bootstrap confidence interval.
+            If ``True``, shade the stored bootstrap confidence interval behind
+            the kernel. This requires that the model already contains a stored
+            interval from training or :meth:`bootstrap_confidence_interval`.
         interval_color, interval_alpha:
             Styling for the bootstrap interval shading.
 
@@ -760,6 +815,12 @@ class TRF:
         -------
         fig, ax:
             The matplotlib figure and axes containing the plot.
+
+        Notes
+        -----
+        This helper is a thin wrapper around :mod:`matplotlib`. It imports the
+        plotting backend lazily so that the core toolbox stays usable without
+        installing plotting dependencies.
         """
 
         if self.weights is None or self.times is None:
@@ -806,6 +867,40 @@ class TRF:
     ):
         """Plot every input/output kernel in a grid.
 
+        Parameters
+        ----------
+        tmin, tmax:
+            Optional lag window to visualize. If omitted, the fitted lag window
+            is used for every panel.
+        ax:
+            Optional array of pre-created matplotlib axes with shape
+            ``(n_inputs, n_outputs)``. When omitted, a matching grid is created
+            automatically.
+        time_unit:
+            Either ``"ms"`` or ``"s"`` for the shared lag axis.
+        color, linewidth:
+            Styling applied to every kernel trace in the grid.
+        show_bootstrap_interval:
+            If ``True``, overlay the stored bootstrap interval in every panel.
+        interval_color, interval_alpha:
+            Styling for the interval shading.
+        input_labels, output_labels:
+            Optional human-readable labels used to title the individual panels.
+            When omitted, generic ``Input N`` / ``Output N`` labels are used.
+        title:
+            Optional figure-level title.
+        sharey:
+            If ``True``, all axes share the same y limits. This is useful for
+            visual comparison across channels but can hide small kernels when
+            one panel contains much larger values than the others.
+
+        Returns
+        -------
+        fig, axes:
+            The matplotlib figure and the full axes grid.
+
+        Notes
+        -----
         This is convenient for multifeature or multichannel models where
         calling :meth:`plot` repeatedly would be cumbersome.
         """
@@ -958,6 +1053,40 @@ class TRF:
         power is the squared magnitude of the analytic signal of each
         band-limited kernel. The result is closer to what users expect from a
         spectrogram than simply squaring the oscillatory kernel itself.
+
+        Parameters
+        ----------
+        n_bands:
+            Number of analysis bands used to partition the fitted transfer
+            function.
+        fmin, fmax:
+            Frequency range in Hz to analyze. By default the full fitted range
+            is used.
+        tmin, tmax:
+            Optional lag window in seconds to extract from the reconstructed
+            band-limited kernels.
+        scale:
+            Placement of band centers. ``"linear"`` uses evenly spaced bands
+            and ``"log"`` uses logarithmic spacing.
+        bandwidth:
+            Width of the Gaussian analysis filters in Hz. If omitted, it is
+            inferred from neighboring band centers.
+        method:
+            Power estimation method. Currently only ``"hilbert"`` is
+            implemented, which converts each band-limited kernel to an analytic
+            signal and then squares its magnitude.
+
+        Returns
+        -------
+        TimeFrequencyPower
+            Container holding band centers, lag axis, and the power tensor with
+            shape ``(n_inputs, n_bands, n_lags, n_outputs)``.
+
+        Notes
+        -----
+        This representation is best interpreted as a descriptive view of the
+        fitted kernel, not as a spectrogram of the original stimulus or
+        response recordings.
         """
 
         resolved_method = str(method).strip().lower()
@@ -1011,7 +1140,43 @@ class TRF:
         vmax: float | None = None,
         frequency_axis_scale: str | None = None,
     ):
-        """Plot one frequency-resolved kernel map as a heatmap."""
+        """Plot one frequency-resolved kernel map as a heatmap.
+
+        Parameters
+        ----------
+        resolved:
+            Precomputed output of :meth:`frequency_resolved_weights`. Supplying
+            this is useful when you want to plot several channels from the same
+            decomposition without recomputing it. If omitted, the decomposition
+            is computed on demand from the remaining keyword arguments.
+        input_index, output_index:
+            Select which input/output pair to display.
+        n_bands, fmin, fmax, tmin, tmax, scale, bandwidth, value_mode:
+            Parameters used when ``resolved`` is not supplied. They map exactly
+            to :meth:`frequency_resolved_weights`.
+        ax:
+            Existing matplotlib axes. When omitted, a new figure is created.
+        time_unit:
+            Either ``"ms"`` or ``"s"`` for the lag axis.
+        cmap:
+            Optional matplotlib colormap. When omitted, a diverging map is used
+            for signed weights and a sequential map is used for non-negative
+            views.
+        colorbar:
+            If ``True``, add a colorbar describing the displayed values.
+        title:
+            Optional plot title.
+        vmin, vmax:
+            Optional explicit color limits.
+        frequency_axis_scale:
+            Optional display scaling for the frequency axis. If omitted, the
+            scale stored in ``resolved`` is used.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the heatmap.
+        """
 
         from .plotting import plot_frequency_resolved_weights
 
@@ -1068,7 +1233,41 @@ class TRF:
         vmax: float | None = None,
         frequency_axis_scale: str | None = None,
     ):
-        """Plot a spectrogram-like time-frequency power map."""
+        """Plot a spectrogram-like time-frequency power map.
+
+        Parameters
+        ----------
+        power:
+            Precomputed output of :meth:`time_frequency_power`. Supplying this
+            avoids recomputing the decomposition when plotting multiple panels.
+            If omitted, the power map is computed on demand from the remaining
+            keyword arguments.
+        input_index, output_index:
+            Select which input/output pair to display.
+        n_bands, fmin, fmax, tmin, tmax, scale, bandwidth, method:
+            Parameters used when ``power`` is not supplied. They map exactly to
+            :meth:`time_frequency_power`.
+        ax:
+            Existing matplotlib axes. When omitted, a new figure is created.
+        time_unit:
+            Either ``"ms"`` or ``"s"`` for the lag axis.
+        cmap:
+            Optional matplotlib colormap for the heatmap.
+        colorbar:
+            If ``True``, add a colorbar labeled as power.
+        title:
+            Optional plot title.
+        vmin, vmax:
+            Optional explicit color limits.
+        frequency_axis_scale:
+            Optional display scaling for the frequency axis. If omitted, the
+            scale stored in ``power`` is used.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the heatmap.
+        """
 
         from .plotting import plot_frequency_resolved_weights
 
@@ -1121,6 +1320,12 @@ class TRF:
         frequencies, transfer_function:
             Frequency vector in Hz and the matching complex transfer-function
             values for the selected input/output pair.
+
+        Notes
+        -----
+        The returned complex values encode both gain and phase. If you want
+        ready-to-plot derived quantities such as magnitude, phase, or group
+        delay, use :meth:`transfer_function_components_at` instead.
         """
 
         if self.transfer_function is None or self.frequencies is None:
@@ -1141,7 +1346,22 @@ class TRF:
         output_index: int = 0,
         phase_unit: str = "rad",
     ) -> TransferFunctionComponents:
-        """Return magnitude, phase, and group delay for one transfer function."""
+        """Return magnitude, phase, and group delay for one transfer function.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select the predictor-target pair to inspect.
+        phase_unit:
+            Unit used for the returned phase values. Must be ``"rad"`` or
+            ``"deg"``.
+
+        Returns
+        -------
+        TransferFunctionComponents
+            Container with the raw complex transfer function plus magnitude,
+            unwrapped phase, and group delay for the selected pair.
+        """
 
         frequencies, transfer = self.transfer_function_at(
             input_index=input_index,
@@ -1175,7 +1395,36 @@ class TRF:
         group_delay_unit: str = "ms",
         title: str | None = None,
     ):
-        """Plot magnitude, phase, and/or group delay of one transfer function."""
+        """Plot magnitude, phase, and/or group delay of one transfer function.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select the predictor-target pair to display.
+        kind:
+            Which quantity to plot. Use ``"magnitude"``, ``"phase"``,
+            ``"group_delay"``, ``"both"`` (magnitude plus phase), or ``"all"``
+            (magnitude, phase, and group delay).
+        ax:
+            Existing matplotlib axes. For ``kind="both"`` provide two stacked
+            axes, and for ``kind="all"`` provide three. When omitted, a new
+            figure is created.
+        color, phase_color, group_delay_color:
+            Optional line colors for the displayed curves.
+        linewidth:
+            Line width passed to matplotlib.
+        phase_unit:
+            Unit for plotted phase values, either ``"rad"`` or ``"deg"``.
+        group_delay_unit:
+            Unit for plotted group delay values, either ``"s"`` or ``"ms"``.
+        title:
+            Optional plot title.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the requested view.
+        """
 
         from .plotting import plot_transfer_function
 
@@ -1217,6 +1466,36 @@ class TRF:
         - predicted and observed output spectra
         - matched predicted-vs-observed cross-spectra
         - magnitude-squared coherence between prediction and target
+
+        Parameters
+        ----------
+        stimulus, response:
+            Data to evaluate. The method follows the same directional
+            conventions as :meth:`predict`: forward models require
+            ``stimulus`` and compare predictions against ``response``, while
+            backward models require ``response`` and compare predictions
+            against ``stimulus``.
+        tmin, tmax:
+            Optional lag window used when generating predictions for the
+            diagnostics. If omitted, the fitted lag window is reused.
+        trial_weights:
+            Trial weights used when aggregating the diagnostic spectra. The
+            default sentinel value means "reuse the weighting strategy stored on
+            the model". You can also pass ``None``, ``"inverse_variance"``, or
+            an explicit vector of weights.
+
+        Returns
+        -------
+        TRFDiagnostics
+            Container holding transfer-function slices, spectra, cross-spectra,
+            and coherence.
+
+        Notes
+        -----
+        These diagnostics answer a different question than the lag-domain
+        kernel plots: they show whether the model captures the spectral content
+        of the observed targets, output by output, under the same spectral
+        estimation settings used during fitting.
         """
 
         if self.transfer_function is None or self.frequencies is None:
@@ -1339,7 +1618,28 @@ class TRF:
         linewidth: float = 2.0,
         title: str | None = None,
     ):
-        """Plot magnitude-squared coherence between predictions and targets."""
+        """Plot magnitude-squared coherence between predictions and targets.
+
+        Parameters
+        ----------
+        stimulus, response:
+            Evaluation data used when ``diagnostics`` is not supplied.
+        diagnostics:
+            Precomputed diagnostics from :meth:`cross_spectral_diagnostics`.
+            Passing this is useful when plotting several outputs from the same
+            evaluation result.
+        output_index:
+            Target output channel to display.
+        ax:
+            Existing matplotlib axes. When omitted, a new figure is created.
+        color, linewidth, title:
+            Standard matplotlib styling options for the coherence curve.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the coherence plot.
+        """
 
         from .plotting import plot_coherence
 
@@ -1373,7 +1673,31 @@ class TRF:
         phase_unit: str = "rad",
         title: str | None = None,
     ):
-        """Plot the predicted-vs-observed cross spectrum for one output."""
+        """Plot the predicted-vs-observed cross spectrum for one output.
+
+        Parameters
+        ----------
+        stimulus, response:
+            Evaluation data used when ``diagnostics`` is not supplied.
+        diagnostics:
+            Precomputed diagnostics from :meth:`cross_spectral_diagnostics`.
+        output_index:
+            Target output channel to display.
+        kind:
+            Which quantity to plot. Use ``"magnitude"``, ``"phase"``, or
+            ``"both"``.
+        ax:
+            Existing matplotlib axes. For ``kind="both"`` provide two stacked
+            axes. When omitted, a new figure is created.
+        color, phase_color, linewidth, phase_unit, title:
+            Standard plotting options passed through to the underlying
+            matplotlib helper.
+
+        Returns
+        -------
+        fig, ax:
+            The matplotlib figure and axes containing the requested view.
+        """
 
         from .plotting import plot_cross_spectrum
 
@@ -1401,7 +1725,21 @@ class TRF:
         tmin: float | None = None,
         tmax: float | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Return the stored bootstrap interval over the requested lag window."""
+        """Return the stored bootstrap interval over the requested lag window.
+
+        Parameters
+        ----------
+        tmin, tmax:
+            Optional lag window in seconds to extract from the stored interval.
+            If omitted, the full stored interval is returned.
+
+        Returns
+        -------
+        interval, times:
+            ``interval`` has shape ``(2, n_inputs, n_lags, n_outputs)`` where
+            the first axis contains lower and upper bounds. ``times`` contains
+            the matching lag values in seconds.
+        """
 
         if self.bootstrap_interval is None or self.times is None:
             raise ValueError("No bootstrap interval is stored on this model.")
@@ -1430,6 +1768,34 @@ class TRF:
         Bootstrap resampling is performed over trials, so at least two trials
         are required. ``n_jobs`` controls optional parallel execution across
         bootstrap resamples.
+
+        Parameters
+        ----------
+        stimulus, response:
+            Trial data used for the bootstrap resampling. They follow the same
+            single-trial vs multi-trial conventions as :meth:`train`.
+        n_bootstraps:
+            Number of bootstrap resamples. Larger values yield a more stable
+            interval estimate but increase runtime.
+        level:
+            Confidence level between 0 and 1. For example, ``0.95`` stores a
+            95% interval.
+        seed:
+            Optional random seed for reproducible bootstrap resampling.
+        n_jobs:
+            Number of worker threads used to evaluate bootstrap resamples.
+            ``1`` runs serially and ``-1`` uses all available cores.
+        trial_weights:
+            Trial-weighting strategy used while aggregating spectra inside each
+            bootstrap replicate. The default reuses the model's stored
+            weighting behavior.
+
+        Returns
+        -------
+        interval, times:
+            Stored confidence interval with shape
+            ``(2, n_inputs, n_lags, n_outputs)`` and the corresponding lag axis
+            in seconds.
         """
 
         if self.regularization is None or self.fs is None or self.tmin is None or self.tmax is None:
@@ -1505,12 +1871,16 @@ class TRF:
         prediction or (prediction, metric):
             Predicted trials are returned in the same single-trial vs list form
             as the predictor input. When observed targets are supplied, the
-            method also returns the metric defined on the estimator.
+            method also returns the metric defined on the estimator. The score
+            shape is controlled by ``average``.
 
         Notes
         -----
         Prediction is performed by convolving the predictor with the extracted
-        time-domain kernel over the requested lag window.
+        time-domain kernel over the requested lag window. This means you can
+        evaluate alternative lag windows on a fitted model without repeating
+        spectral training, as long as the requested window stays within what is
+        representable by the stored transfer function.
         """
 
         if self.weights is None or self.fs is None:
@@ -1583,6 +1953,16 @@ class TRF:
 
         This is a convenience wrapper around :meth:`predict` for workflows where
         only the metric is needed.
+
+        Parameters
+        ----------
+        stimulus, response, average, tmin, tmax:
+            Identical to :meth:`predict`.
+
+        Returns
+        -------
+        numpy.ndarray or float
+            Prediction score computed with the estimator's configured metric.
         """
 
         _, metric = self.predict(
@@ -1738,7 +2118,20 @@ class TRF:
         return fold_mean[:, np.asarray(list(average), dtype=int)].mean(axis=1)
 
     def save(self, path: str | Path) -> None:
-        """Serialize the fitted estimator to disk using :mod:`pickle`."""
+        """Serialize the estimator to disk using :mod:`pickle`.
+
+        Parameters
+        ----------
+        path:
+            Destination file. Parent directories must already exist.
+
+        Notes
+        -----
+        The entire estimator instance is serialized, including fitted weights,
+        spectral settings, chosen regularization, bootstrap intervals, and the
+        configured scoring metric. Pickle files should only be loaded from
+        trusted sources.
+        """
         path = Path(path)
         if not path.parent.exists():
             raise FileNotFoundError(f"Directory does not exist: {path.parent}")
@@ -1746,7 +2139,19 @@ class TRF:
             pickle.dump(self, handle, pickle.HIGHEST_PROTOCOL)
 
     def load(self, path: str | Path) -> None:
-        """Load estimator state from a pickle file into this instance."""
+        """Load estimator state from a pickle file into this instance.
+
+        Parameters
+        ----------
+        path:
+            Pickle file previously created by :meth:`save`.
+
+        Notes
+        -----
+        The current instance is updated in place. After loading, compatibility
+        checks fill in any newer attributes that may not have existed in older
+        saved files.
+        """
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"File does not exist: {path}")
@@ -1783,7 +2188,15 @@ class TRF:
             self.n_tapers = None
 
     def copy(self) -> "TRF":
-        """Return a copy of the estimator and all learned arrays."""
+        """Return a copy of the estimator and all learned arrays.
+
+        Returns
+        -------
+        TRF
+            Independent copy of the estimator state. NumPy arrays and other
+            stored values are copied so that subsequent mutations on the copy
+            do not affect the original instance.
+        """
 
         copied = TRF(direction=self.direction, metric=self.metric)
         for key, value in self.__dict__.items():

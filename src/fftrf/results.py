@@ -12,6 +12,11 @@ import numpy as np
 class TRFDiagnostics:
     """Observed-vs-predicted spectral diagnostics for a fitted model.
 
+    This container is returned by :meth:`fftrf.TRF.cross_spectral_diagnostics`
+    and groups together the most useful frequency-domain quantities for
+    checking how well a fitted model reproduces the spectral structure of the
+    observed targets.
+
     Attributes
     ----------
     frequencies:
@@ -31,6 +36,12 @@ class TRFDiagnostics:
     coherence:
         Magnitude-squared coherence between each predicted output and the
         corresponding observed target. Shape is ``(n_frequencies, n_outputs)``.
+
+    Notes
+    -----
+    The spectra are computed with the same segmentation, FFT length, window,
+    and optional trial weighting that the estimator uses for its fitted model,
+    unless explicitly overridden at call time.
     """
 
     frequencies: np.ndarray
@@ -48,6 +59,9 @@ CrossSpectralDiagnostics = TRFDiagnostics
 class TransferFunctionComponents:
     """Derived one-pair transfer-function quantities.
 
+    This container is returned by :meth:`fftrf.TRF.transfer_function_components_at`
+    and is meant for one selected input/output pair.
+
     Attributes
     ----------
     frequencies:
@@ -62,6 +76,12 @@ class TransferFunctionComponents:
         Unit used for :attr:`phase`, either ``"rad"`` or ``"deg"``.
     group_delay:
         Group delay derived from the unwrapped phase, expressed in seconds.
+
+    Notes
+    -----
+    Group delay is often easiest to interpret away from frequencies where the
+    transfer-function magnitude is extremely small, because phase-based
+    quantities can become noisy when the complex response approaches zero.
     """
 
     frequencies: np.ndarray
@@ -117,7 +137,20 @@ class FrequencyResolvedWeights:
         input_index: int = 0,
         output_index: int = 0,
     ) -> np.ndarray:
-        """Return one frequency-by-lag map from the resolved kernel bank."""
+        """Return one frequency-by-lag map from the resolved kernel bank.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select the predictor/target pair to extract from the stored 4D
+            tensor.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array with shape ``(n_bands, n_lags)`` for the requested
+            input/output pair.
+        """
 
         if not 0 <= int(input_index) < self.weights.shape[0]:
             raise IndexError(f"input_index out of bounds: {input_index}")
@@ -129,6 +162,10 @@ class FrequencyResolvedWeights:
 @dataclass(slots=True)
 class TimeFrequencyPower:
     """Spectrogram-like time-frequency power derived from a fitted kernel.
+
+    This container is returned by :meth:`fftrf.TRF.time_frequency_power`. It
+    mirrors :class:`FrequencyResolvedWeights` but stores a smoothed positive
+    power representation instead of signed band-limited kernels.
 
     Attributes
     ----------
@@ -169,7 +206,20 @@ class TimeFrequencyPower:
         input_index: int = 0,
         output_index: int = 0,
     ) -> np.ndarray:
-        """Return one frequency-by-lag power map."""
+        """Return one frequency-by-lag power map.
+
+        Parameters
+        ----------
+        input_index, output_index:
+            Select the predictor/target pair to extract from the stored power
+            tensor.
+
+        Returns
+        -------
+        numpy.ndarray
+            Array with shape ``(n_bands, n_lags)`` for the requested
+            input/output pair.
+        """
 
         if not 0 <= int(input_index) < self.power.shape[0]:
             raise IndexError(f"input_index out of bounds: {input_index}")

@@ -4,13 +4,47 @@
 frequency domain. It is designed for continuous stimulus-response modeling with
 a small public API centered on `fftrf.TRF`.
 
-The full documentation now lives in [`docs/`](docs/index.md), with dedicated
-pages for:
+The full documentation is hosted at
+[weigla.github.io/ffTRF](https://weigla.github.io/ffTRF/), with dedicated pages
+for:
 
-- [Getting Started](docs/getting-started.md)
-- [Examples](docs/examples.md)
-- [API Reference](docs/reference/index.md)
-- [Development](docs/development.md)
+- [Getting Started](https://weigla.github.io/ffTRF/getting-started/)
+- [Examples](https://weigla.github.io/ffTRF/examples/)
+- [API Reference](https://weigla.github.io/ffTRF/reference/)
+- [Development](https://weigla.github.io/ffTRF/development/)
+
+## Performance
+
+One of the main reasons `ffTRF` exists is to avoid explicit lag-matrix
+construction in the regimes where that becomes expensive: high sample rates,
+long lag windows, cross-validated ridge grids, segmented spectral estimation,
+and high-dimensional forward or backward models.
+
+The benchmark in [`examples/benchmark_runtime.py`](examples/benchmark_runtime.py)
+compares `fftrf.TRF` against `mTRFpy` on identical simulated data, measures
+median fit time over 3 timed repetitions after 1 warmup run, records per-fit
+peak RSS in isolated worker processes, and reports held-out Pearson
+correlation on a separate simulation split. The latest full report generated
+with `pixi run -e compare benchmark-demo` is stored in
+[`artifacts/runtime_benchmark.md`](artifacts/runtime_benchmark.md).
+
+Representative results on Apple M3, Python 3.13, NumPy 2.4, SciPy 1.17, and
+mTRFpy 2.1:
+
+| Scenario | TRF fit (s) | mTRFpy fit (s) | Speedup | TRF peak RSS (MiB) | mTRFpy peak RSS (MiB) | Held-out r |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2898 | 0.3141 | 1.08x | 105.6 | 539.5 | 0.9990 vs 0.9990 |
+| Longer lag window (`600` lags) | 0.1456 | 0.3894 | 2.67x | 100.4 | 543.0 | 0.9989 vs 0.9989 |
+| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1657 | 1.1865 | 7.16x | 107.1 | 368.0 | 0.9989 vs 0.9990 |
+| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0242 | 0.3048 | 12.60x | 99.3 | 540.2 | 0.9989 vs 0.9990 |
+| EEG-scale forward model (`16 -> 102`) | 0.0560 | 0.0695 | 1.24x | 163.6 | 220.5 | 0.9450 vs 0.9293 |
+| 102-channel backward decoder (`102 -> 1`) | 0.2996 | 3.0191 | 10.08x | 356.5 | 1107.8 | 0.9813 vs 0.8695 |
+
+The short, fixed-ridge 1-to-1 cases are not always faster than `mTRFpy`, so
+the benchmark is not claiming a universal speed win. The main pattern is that
+`ffTRF` pulls ahead once the lag count, channel count, CV grid size, or
+segmented spectral workflow gets heavy, while also using substantially less
+memory in those scenarios.
 
 ## Installation
 
@@ -35,6 +69,23 @@ pip install -e ".[test]"
 pip install -e ".[compare]"
 pip install -e ".[docs]"
 ```
+
+For an existing Pixi project, you can link `ffTRF` directly from GitHub via
+Pixi's `pypi-dependencies`:
+
+```toml
+[pypi-dependencies]
+fftrf = { git = "https://github.com/weigla/ffTRF" }
+```
+
+Then run:
+
+```bash
+pixi install
+```
+
+If you want to pin a specific revision, add `rev = "<commit>"` to that table
+entry.
 
 ## Quick Example
 

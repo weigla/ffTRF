@@ -1,7 +1,7 @@
 # Regularization and Cross-Validation
 
-`TRF.train(...)` supports both direct fixed-ridge fitting and
-cross-validated regularization search.
+`TRF.train(...)` supports both direct fixed-ridge fitting and cross-validated
+regularization search.
 
 ## Scalar Ridge
 
@@ -17,6 +17,15 @@ model.train(
     regularization=1e-3,
 )
 ```
+
+Use this when:
+
+- you already know a sensible ridge value from previous experiments
+- you want the fastest possible fit
+- you are running a reproducible pipeline with fixed hyperparameters
+
+In this mode, `train(...)` returns `None` because no candidate grid is
+evaluated.
 
 ## Cross-Validated Search
 
@@ -36,12 +45,32 @@ scores = model.train(
 )
 ```
 
-Useful options:
+In this mode:
 
-- `k="loo"` enables leave-one-out cross-validation over trials.
-- `average=True` reduces scores across outputs.
-- `average=False` keeps one score per output channel.
-- `segment_duration` is the user-friendly alternative to `segment_length`.
+- one score is computed per candidate regularization value
+- the best candidate is chosen automatically
+- the final model is refit on all supplied trials using that best candidate
+- the candidate grid is stored in `model.regularization_candidates`
+
+## The Meaning of `average`
+
+The `average` argument controls how scores are reduced across outputs:
+
+- `average=True`: return one score per regularization candidate
+- `average=False`: keep one score per output
+- `average=[...]`: average only over the listed outputs
+
+This matters when different output channels behave differently. For example,
+you might want to select regularization based only on a subset of channels.
+
+## The Meaning of `k`
+
+- `k="loo"` or `k=-1`: leave-one-out over trials
+- `k=4`, `k=5`, ...: split trials into that many folds
+
+Use leave-one-out when trial count is small and you want maximal use of the
+data per fold. Use a smaller number of folds when trial count is large and
+runtime matters more.
 
 ## Banded Regularization
 
@@ -61,6 +90,26 @@ model.train(
 )
 ```
 
+Example interpretation of `bands=[1, 16]`:
+
+- first feature belongs to group 1
+- next 16 features belong to group 2
+
+In banded mode, `ffTRF` expands the chosen coefficients into a per-feature
+penalty vector internally.
+
+## Segment Choices Matter Too
+
+Regularization is not the only stability control. Segment settings matter as
+well:
+
+- longer segments improve frequency resolution
+- shorter segments can increase the number of independent observations
+- overlap can stabilize estimates when segments are short
+- windowing can reduce spectral leakage in the standard estimator
+
+If a model feels unstable, consider segment settings alongside ridge values.
+
 ## Practical Advice
 
 - Use direct fitting when you already know a sensible ridge value.
@@ -68,3 +117,5 @@ model.train(
 - Use `k=4` or `k=5` when trial count is larger and runtime matters more.
 - Use longer segments when you care about lag resolution and narrower spectral
   smoothing.
+- Start with a broad log-spaced grid, then narrow it once you know the useful
+  range for your data.

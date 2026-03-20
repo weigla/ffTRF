@@ -17,9 +17,30 @@ The main estimator is `fftrf.TRF`. It supports:
 - transfer-function and cross-spectral diagnostics
 - frequency-resolved lag-domain views of recovered kernels
 
+## Workflow at a Glance
+
+The typical workflow is:
+
+1. prepare stimulus and response arrays with matching sample counts per trial
+2. create `TRF(direction=1)` for forward encoding or `TRF(direction=-1)` for
+   backward decoding
+3. call `train(...)` or `train_multitaper(...)`
+4. inspect the fitted kernel with `plot(...)` or `plot_grid(...)`
+5. evaluate generalization with `predict(...)` or `score(...)`
+6. inspect spectral behavior with transfer-function and coherence diagnostics
+7. save the fitted model with `save(...)` if you want to reuse it later
+
+`ffTRF` stores both the complex frequency-domain transfer function and the
+derived lag-domain kernel, so users can move between time-domain and
+frequency-domain views without retraining.
+
 ## Start Here
 
 - New to the package: go to [Getting Started](getting-started.md)
+- Need the full workflow explained end to end: go to
+  [Core Workflow](guides/core-workflow.md)
+- Need shape conventions and multi-trial rules: go to
+  [Inputs and Shapes](guides/inputs-and-shapes.md)
 - Looking for runnable demos: go to [Examples](examples.md)
 - Looking for API docs: go to [Reference](reference/index.md)
 - Working on the repo itself: go to [Development](development.md)
@@ -47,6 +68,39 @@ pip install -e ".[test]"
 pip install -e ".[compare]"
 pip install -e ".[docs]"
 ```
+
+## What ffTRF Actually Fits
+
+The estimator solves for a complex transfer function in the frequency domain
+and then transforms that solution into a time-domain kernel over the lag window
+you request with `tmin` and `tmax`.
+
+That has a few practical consequences:
+
+- you do not need to build an explicit lag matrix yourself
+- fitting can reuse cached per-trial spectra across cross-validation folds
+- the same fitted model can be inspected in both lag-domain and
+  frequency-domain forms
+- optional multi-taper estimation fits into the same API instead of requiring a
+  separate estimator class
+
+## Documentation Map
+
+- [Getting Started](getting-started.md): first fit, first prediction, first plot
+- [Core Workflow](guides/core-workflow.md): how the estimator is meant to be
+  used step by step
+- [Inputs and Shapes](guides/inputs-and-shapes.md): single-trial vs multi-trial
+  conventions and direction-dependent behavior
+- [Regularization and CV](guides/regularization.md): direct fits, CV grids, and
+  banded ridge
+- [Multitaper Estimation](guides/multitaper.md): when and how to use DPSS
+- [Frequency-Resolved Analysis](guides/frequency-resolved.md): lag-frequency
+  views of the fitted kernel
+- [Diagnostics and Transfer Functions](guides/diagnostics-and-transfer-functions.md):
+  spectral inspection tools
+- [Trial Weighting and Bootstrap](guides/trial-weighting-and-bootstrap.md):
+  weighting noisy trials and quantifying uncertainty
+- [Reference](reference/index.md): detailed function-by-function API
 
 ## Example Gallery
 

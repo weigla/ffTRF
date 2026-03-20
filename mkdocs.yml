@@ -27,10 +27,18 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Guides:
+      - Core Workflow: guides/core-workflow.md
+      - Inputs and Shapes: guides/inputs-and-shapes.md
       - Regularization and CV: guides/regularization.md
       - Multitaper Estimation: guides/multitaper.md
       - Frequency-Resolved Analysis: guides/frequency-resolved.md
+      - Diagnostics and Transfer Functions: guides/diagnostics-and-transfer-functions.md
       - Trial Weighting and Bootstrap: guides/trial-weighting-and-bootstrap.md
   - Examples: examples.md
-  - Reference: reference/index.md
+  - Reference:
+      - Overview: reference/index.md
+      - TRF Estimator: reference/trf.md
+      - Result Containers: reference/results.md
+      - Metrics: reference/metrics.md
+      - Preprocessing Helpers: reference/preprocessing.md
   - Development: development.md
