@@ -1,0 +1,36 @@
+site_name: ffTRF
+site_description: Frequency-domain temporal response functions in Python
+site_url: https://weigla.github.io/ffTRF/
+repo_url: https://github.com/weigla/ffTRF
+repo_name: weigla/ffTRF
+edit_uri: edit/main/docs/
+theme:
+  name: material
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            heading_level: 2
+            show_root_heading: true
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - Regularization and CV: guides/regularization.md
+      - Multitaper Estimation: guides/multitaper.md
+      - Frequency-Resolved Analysis: guides/frequency-resolved.md
+      - Trial Weighting and Bootstrap: guides/trial-weighting-and-bootstrap.md
+  - Examples: examples.md
+  - Reference: reference/index.md
+  - Development: development.md

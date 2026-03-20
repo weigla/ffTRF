@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: save, load, and reuse a fitted `FrequencyTRF` model."""
+"""Example: save, load, and reuse a fitted `TRF` model."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 from simulated_data import (
     build_single_trial_single_channel_dataset,
@@ -26,7 +26,7 @@ def main() -> None:
     stimulus = dataset.stimulus[0]
     response = dataset.response[0]
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -41,7 +41,7 @@ def main() -> None:
     prediction, score = model.predict(stimulus=stimulus, response=response)
 
     model.save(MODEL_PATH)
-    restored = FrequencyTRF(direction=1)
+    restored = TRF(direction=1)
     restored.load(MODEL_PATH)
     restored_prediction, restored_score = restored.predict(
         stimulus=stimulus,

@@ -5,13 +5,15 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
-import fftrf.model as model_module
+import fftrf
+import fftrf.estimator as estimator_module
+import fftrf.spectral as spectral_module
 import numpy as np
 import pytest
 
 from fftrf import (
     FrequencyResolvedWeights,
-    FrequencyTRF,
+    TRF,
     TimeFrequencyPower,
     available_metrics,
     explained_variance_score,
@@ -99,7 +101,7 @@ def test_frequency_trf_recovers_impulse_response() -> None:
         noise_scale=0.02,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -135,7 +137,7 @@ def test_train_selects_regularization_and_predicts_held_out_data() -> None:
     train_x, test_x = stimulus[:8], stimulus[8:]
     train_y, test_y = response[:8], response[8:]
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     scores = model.train(
         stimulus=train_x,
         response=train_y,
@@ -172,7 +174,7 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
 
     call_count = 0
     aggregate_flags: list[bool] = []
-    original = model_module._build_spectral_cache
+    original = estimator_module._build_spectral_cache
 
     def counting_cache(*args, **kwargs):
         nonlocal call_count
@@ -180,9 +182,9 @@ def test_cross_validation_builds_spectral_cache_once(monkeypatch: pytest.MonkeyP
         aggregate_flags.append(bool(kwargs.get("aggregate_only", False)))
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(model_module, "_build_spectral_cache", counting_cache)
+    monkeypatch.setattr(estimator_module, "_build_spectral_cache", counting_cache)
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     scores = model.train(
         stimulus=stimulus,
         response=response,
@@ -219,15 +221,15 @@ def test_fixed_lambda_fit_uses_aggregated_spectra_path(
     )
 
     aggregate_flags: list[bool] = []
-    original = model_module._build_spectral_cache
+    original = estimator_module._build_spectral_cache
 
     def counting_cache(*args, **kwargs):
         aggregate_flags.append(bool(kwargs.get("aggregate_only", False)))
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(model_module, "_build_spectral_cache", counting_cache)
+    monkeypatch.setattr(estimator_module, "_build_spectral_cache", counting_cache)
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -261,16 +263,16 @@ def test_cross_validation_aggregates_fold_spectra_once_per_fold(
     )
 
     call_count = 0
-    original = model_module._aggregate_cached_spectra
+    original = estimator_module._aggregate_cached_spectra
 
     def counting_aggregate(*args, **kwargs):
         nonlocal call_count
         call_count += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(model_module, "_aggregate_cached_spectra", counting_aggregate)
+    monkeypatch.setattr(estimator_module, "_aggregate_cached_spectra", counting_aggregate)
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -305,7 +307,7 @@ def test_solve_transfer_function_matches_direct_solver() -> None:
         cxy,
         feature_regularization=scalar_regularization,
     )
-    optimized_scalar = model_module._solve_transfer_function(
+    optimized_scalar = spectral_module._solve_transfer_function(
         cxx,
         cxy,
         feature_regularization=scalar_regularization,
@@ -318,7 +320,7 @@ def test_solve_transfer_function_matches_direct_solver() -> None:
         cxy,
         feature_regularization=feature_regularization,
     )
-    optimized_featurewise = model_module._solve_transfer_function(
+    optimized_featurewise = spectral_module._solve_transfer_function(
         cxx,
         cxy,
         feature_regularization=feature_regularization,
@@ -342,7 +344,7 @@ def test_cross_validation_n_jobs_matches_serial_results() -> None:
         noise_scale=0.05,
     )
 
-    serial = FrequencyTRF(direction=1)
+    serial = TRF(direction=1)
     serial_scores = serial.train(
         stimulus=stimulus,
         response=response,
@@ -357,7 +359,7 @@ def test_cross_validation_n_jobs_matches_serial_results() -> None:
         n_jobs=1,
     )
 
-    parallel = FrequencyTRF(direction=1)
+    parallel = TRF(direction=1)
     parallel_scores = parallel.train(
         stimulus=stimulus,
         response=response,
@@ -393,7 +395,7 @@ def test_segment_duration_alias_matches_segment_length() -> None:
         noise_scale=0.04,
     )
 
-    by_samples = FrequencyTRF(direction=1)
+    by_samples = TRF(direction=1)
     by_samples.train(
         stimulus=stimulus,
         response=response,
@@ -406,7 +408,7 @@ def test_segment_duration_alias_matches_segment_length() -> None:
         window="hann",
     )
 
-    by_seconds = FrequencyTRF(direction=1)
+    by_seconds = TRF(direction=1)
     by_seconds.train(
         stimulus=stimulus,
         response=response,
@@ -439,7 +441,7 @@ def test_k_accepts_loo_alias() -> None:
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     scores = model.train(
         stimulus=stimulus,
         response=response,
@@ -470,7 +472,7 @@ def test_single_lambda_warns_about_unused_cv_arguments() -> None:
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     with pytest.warns(UserWarning, match="ignored because cross-validation requires more than one regularization candidate"):
         model.train(
             stimulus=stimulus,
@@ -500,7 +502,7 @@ def test_cv_progress_indicator_emits_output(capsys: pytest.CaptureFixture[str]) 
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -543,7 +545,7 @@ def test_banded_regularization_matches_scalar_ridge_for_equal_penalties() -> Non
         noise_scale=0.03,
     )
 
-    scalar_model = FrequencyTRF(direction=1)
+    scalar_model = TRF(direction=1)
     scalar_model.train(
         stimulus=stimulus,
         response=response,
@@ -554,7 +556,7 @@ def test_banded_regularization_matches_scalar_ridge_for_equal_penalties() -> Non
         window=None,
     )
 
-    banded_model = FrequencyTRF(direction=1)
+    banded_model = TRF(direction=1)
     banded_model.train(
         stimulus=stimulus,
         response=response,
@@ -586,7 +588,7 @@ def test_banded_regularization_cross_validation_expands_cartesian_grid() -> None
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     scores = model.train(
         stimulus=stimulus,
         response=response,
@@ -628,7 +630,7 @@ def test_frequency_trf_supports_named_metric_and_multitaper() -> None:
         noise_scale=0.05,
     )
 
-    model = FrequencyTRF(direction=1, metric="r2")
+    model = TRF(direction=1, metric="r2")
     model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
@@ -667,7 +669,7 @@ def test_frequency_trf_diagnostics_returns_coherence() -> None:
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
@@ -715,7 +717,7 @@ def test_frequency_resolved_weights_reconstruct_kernel() -> None:
         noise_scale=0.03,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -771,7 +773,7 @@ def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
         design.T @ y,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=x,
         response=y[:, np.newaxis],
@@ -815,7 +817,7 @@ def test_multichannel_prediction_and_helpers() -> None:
         stimulus.append(x)
         response.append(y)
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus[:-1],
         response=response[:-1],
@@ -863,7 +865,7 @@ def test_frequency_trf_stores_bootstrap_interval() -> None:
         noise_scale=0.03,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -903,7 +905,7 @@ def test_bootstrap_n_jobs_matches_serial_results() -> None:
         noise_scale=0.03,
     )
 
-    serial = FrequencyTRF(direction=1)
+    serial = TRF(direction=1)
     serial.train(
         stimulus=stimulus,
         response=response,
@@ -919,7 +921,7 @@ def test_bootstrap_n_jobs_matches_serial_results() -> None:
         n_jobs=1,
     )
 
-    parallel = FrequencyTRF(direction=1)
+    parallel = TRF(direction=1)
     parallel.train(
         stimulus=stimulus,
         response=response,
@@ -979,7 +981,7 @@ def test_frequency_trf_plot_if_matplotlib_available() -> None:
         noise_scale=0.03,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -1018,7 +1020,7 @@ def test_frequency_trf_plot_grid_if_matplotlib_available() -> None:
         stimulus.append(x)
         response.append(y)
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -1060,7 +1062,7 @@ def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() ->
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train_multitaper(
         stimulus=stimulus[:-1],
         response=response[:-1],
@@ -1112,7 +1114,7 @@ def test_frequency_resolved_weight_plot_if_matplotlib_available() -> None:
         noise_scale=0.03,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -1155,7 +1157,7 @@ def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() ->
         noise_scale=0.04,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -1171,10 +1173,8 @@ def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() ->
         model.plot(output_index=1)
 
 
-def test_legacy_fft_trf_import_aliases_new_package() -> None:
-    import fft_trf
-    import fft_trf.model as legacy_model_module
-
-    assert fft_trf.FrequencyTRF is FrequencyTRF
-    assert legacy_model_module.FrequencyTRF is model_module.FrequencyTRF
-    assert hasattr(legacy_model_module, "_build_spectral_cache")
+def test_top_level_api_exports_expected_symbols() -> None:
+    assert fftrf.TRF is TRF
+    assert fftrf.FrequencyResolvedWeights is FrequencyResolvedWeights
+    assert fftrf.TimeFrequencyPower is TimeFrequencyPower
+    assert callable(fftrf.available_metrics)

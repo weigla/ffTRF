@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 from simulated_data import (
     build_multi_trial_single_channel_dataset,
@@ -23,7 +23,7 @@ def main() -> None:
 
     dataset = build_multi_trial_single_channel_dataset()
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=dataset.stimulus,
         response=dataset.response,

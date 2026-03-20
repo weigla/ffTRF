@@ -19,6 +19,13 @@ test = [
 ]
 compare = [
   "matplotlib>=3.8",
+  "mtrf>=2.0",
+]
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+  "mkdocstrings>=0.28",
+  "mkdocstrings-python>=1.12",
 ]
 
 [tool.setuptools.packages.find]
@@ -39,19 +46,31 @@ scipy = ">=1.12"
 [tool.pixi.pypi-dependencies]
 fftrf = { path = ".", editable = true }
 
-[tool.pixi.feature.compare.dependencies]
+[tool.pixi.feature.tests.pypi-dependencies]
+pytest = ">=9"
+
+[tool.pixi.feature.comparison.dependencies]
 matplotlib = ">=3.8"
 
-[tool.pixi.feature.compare.pypi-dependencies]
+[tool.pixi.feature.comparison.pypi-dependencies]
 mtrf = ">=2.0"
+
+[tool.pixi.feature.docs-site.pypi-dependencies]
+mkdocs = ">=1.6"
+mkdocs-material = ">=9.5"
+mkdocstrings = ">=0.28"
+mkdocstrings-python = ">=1.12"
 
 [tool.pixi.environments]
 default = { features = [], solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
-compare = { features = ["compare"], solve-group = "default" }
+test = { features = ["tests"], solve-group = "default" }
+compare = { features = ["comparison"], solve-group = "default" }
+docs = { features = ["docs-site"], solve-group = "default" }
 
 [tool.pixi.tasks]
 test = "python -m pytest -q"
-import-check = "python -c \"import fftrf; print(fftrf.FrequencyTRF.__name__)\""
+import-check = "python -c \"import fftrf; print(fftrf.TRF.__name__)\""
 compare-demo = "python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show"
 benchmark-demo = "python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md"
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build --strict"

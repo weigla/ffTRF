@@ -1,7 +1,7 @@
 """Shared simulation helpers for the example scripts.
 
 The functions in this module generate small, interpretable datasets that are
-useful for demonstrating the main `FrequencyTRF` API patterns without depending
+useful for demonstrating the main `TRF` API patterns without depending
 on any external files.
 """
 

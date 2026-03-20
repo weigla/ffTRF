@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF, pearsonr
+from fftrf import TRF, pearsonr
 
 from simulated_data import (
     build_multi_trial_single_channel_dataset,
@@ -27,7 +27,7 @@ def main() -> None:
     test_stimulus = dataset.stimulus[-1]
     test_response = dataset.response[-1]
 
-    model = FrequencyTRF(direction=1, metric="r2")
+    model = TRF(direction=1, metric="r2")
     cv_scores = model.train_multitaper(
         stimulus=train_stimulus,
         response=train_response,

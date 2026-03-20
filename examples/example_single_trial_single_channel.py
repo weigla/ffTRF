@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: single-trial single-channel forward modeling with `FrequencyTRF`."""
+"""Example: single-trial single-channel forward modeling with `TRF`."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF, r2_score
+from fftrf import TRF, r2_score
 
 from simulated_data import (
     build_single_trial_single_channel_dataset,
@@ -24,7 +24,7 @@ def main() -> None:
     stimulus = dataset.stimulus[0]
     response = dataset.response[0]
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,

@@ -9,7 +9,7 @@ The main installable toolbox lives in:
 
 The files here are intended for:
 
-- runnable usage examples for the main `FrequencyTRF` API patterns
+- runnable usage examples for the main `TRF` API patterns
 - sanity checks against time-domain references
 - side-by-side comparisons with `mTRFpy`
 - runtime benchmarking
@@ -18,7 +18,7 @@ The files here are intended for:
 ## Example coverage
 
 The example scripts are organized around the main modeling combinations that are
-practical with `FrequencyTRF`:
+practical with `TRF`:
 
 - `example_single_trial_single_channel.py`
   Single trial, single stimulus feature, single response channel, forward model.
@@ -46,7 +46,7 @@ practical with `FrequencyTRF`:
 
 Each example is intentionally a plain Python script showing the API calls,
 learned attributes, and one corresponding figure. Running a script prints the
-relevant `FrequencyTRF` attributes and saves a figure under `artifacts/examples/`.
+relevant `TRF` attributes and saves a figure under `artifacts/examples/`.
 They are meant to be read alongside the main README: each script follows the
 same pattern of `train(...)`, attribute inspection, `predict(...)`, and
 plotting, but focuses on one concrete use case. The optional features are

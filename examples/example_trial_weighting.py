@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF, inverse_variance_weights
+from fftrf import TRF, inverse_variance_weights
 
 from simulated_data import (
     build_multi_trial_single_channel_dataset,
@@ -32,7 +32,7 @@ def main() -> None:
 
     trial_weights = inverse_variance_weights(train_response)
 
-    unweighted = FrequencyTRF(direction=1)
+    unweighted = TRF(direction=1)
     unweighted.train(
         stimulus=train_stimulus,
         response=train_response,
@@ -49,7 +49,7 @@ def main() -> None:
         response=test_response,
     )
 
-    weighted = FrequencyTRF(direction=1)
+    weighted = TRF(direction=1)
     weighted.train(
         stimulus=train_stimulus,
         response=train_response,

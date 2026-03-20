@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 from simulated_data import (
     build_banded_regularization_dataset,
@@ -28,7 +28,7 @@ def main() -> None:
     test_response = dataset.response[-1]
 
     regularization_grid = np.logspace(-4, 0.5, 6)
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     cv_scores = model.train(
         stimulus=train_stimulus,
         response=train_response,

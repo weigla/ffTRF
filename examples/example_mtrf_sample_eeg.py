@@ -8,7 +8,7 @@ from time import perf_counter
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 from mtrf_sample_data import exact_lag_window_seconds, load_sample_data
 from simulated_data import finalize_figure, require_matplotlib
@@ -26,10 +26,10 @@ def fit_fftrf(
     regularization: float | list[float] | np.ndarray,
     k: int,
     seed: int,
-) -> tuple[FrequencyTRF, np.ndarray | float | None]:
+) -> tuple[TRF, np.ndarray | float | None]:
     """Fit the ffTRF forward model with matched lag settings."""
 
-    model = FrequencyTRF(direction=1, metric="pearsonr")
+    model = TRF(direction=1, metric="pearsonr")
     cv_scores = model.train(
         stimulus=stimulus,
         response=response,

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Benchmark ``FrequencyTRF`` from ``ffTRF`` against a time-domain ``mTRFpy`` fit.
+"""Benchmark ``TRF`` from ``ffTRF`` against a time-domain ``mTRFpy`` fit.
 
 The benchmark is intentionally simple and reproducible:
 
 - simulate continuous stimulus/response pairs from a known kernel
-- fit ``fftrf.FrequencyTRF`` with a fixed ridge value
+- fit ``fftrf.TRF`` with a fixed ridge value
 - fit ``mTRFpy`` with the same lag window and regularization
 - report median training time, per-fit peak memory, and held-out prediction
   accuracy across repeated runs
@@ -30,7 +30,7 @@ from typing import Sequence
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(EXAMPLES_DIR) not in sys.path:
@@ -118,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark FrequencyTRF against mTRFpy and emit a Markdown summary."
+            "Benchmark TRF against mTRFpy and emit a Markdown summary."
         )
     )
     parser.add_argument(
@@ -203,10 +203,10 @@ def fit_frequency_trf(
     stimulus: list[np.ndarray],
     response: list[np.ndarray],
     scenario: BenchmarkScenario,
-) -> FrequencyTRF:
-    """Fit ``FrequencyTRF`` for one scenario."""
+) -> TRF:
+    """Fit ``TRF`` for one scenario."""
 
-    model = FrequencyTRF(direction=scenario.direction)
+    model = TRF(direction=scenario.direction)
     model.train(
         stimulus=stimulus,
         response=response,
@@ -626,7 +626,7 @@ def format_report(
         "Held-out prediction scores are mean Pearson correlations over outputs.",
         "Kernel correlation is computed over the flattened full kernel bank.",
         "",
-        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | FrequencyTRF median fit (s) | FrequencyTRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | Speedup | ffTRF held-out r | mTRFpy held-out r | Kernel corr. |",
+        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | TRF median fit (s) | TRF peak RSS (MiB) | mTRFpy median fit (s) | mTRFpy peak RSS (MiB) | Speedup | ffTRF held-out r | mTRFpy held-out r | Kernel corr. |",
         "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
@@ -660,8 +660,8 @@ def format_report(
             "- The approximate lag-matrix size is shown because it dominates the memory footprint of a standard time-domain fit and grows with both lag count and predictor count.",
             "- `ffTRF held-out r` and `mTRFpy held-out r` are the main accuracy columns: they measure mean Pearson correlation on a separate held-out simulation split generated from the same ground-truth kernel.",
             "- Kernel correlations close to 1 indicate that the two methods recover nearly the same flattened kernel bank. This is most interpretable for forward models; backward decoders can differ more in weight space while still making very similar predictions.",
-            "- Direct fixed-lambda `FrequencyTRF` fits now use an aggregated lower-memory spectral path automatically, so the fixed-ridge rows reflect the lighter-weight solver rather than the heavier CV cache path.",
-            "- Cached spectra matter most in the cross-validated scenario because `FrequencyTRF` can reuse FFT work across lambda candidates, even if that does not automatically make it faster than `mTRFpy` on every machine.",
+            "- Direct fixed-lambda `TRF` fits now use an aggregated lower-memory spectral path automatically, so the fixed-ridge rows reflect the lighter-weight solver rather than the heavier CV cache path.",
+            "- Cached spectra matter most in the cross-validated scenario because `TRF` can reuse FFT work across lambda candidates, even if that does not automatically make it faster than `mTRFpy` on every machine.",
             "- The segmented Hann scenario is intentionally not the closest mTRF-like setting; it shows the cost of a more typical spectral-estimation workflow.",
             "- The EEG-scale forward and 102-channel backward rows show how the trade-off changes once the output side becomes sensor-rich or the backward decoder has many predictor channels.",
             "- Peak RSS is measured per fit in a fresh worker process, so the reported memory is not inflated by earlier benchmark runs.",

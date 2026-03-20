@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from fftrf import FrequencyTRF
+from fftrf import TRF
 
 
 @dataclass(slots=True)
@@ -30,13 +30,8 @@ class KernelComparisonResult:
     time_domain_kernel: np.ndarray
     mtrf_kernel: np.ndarray | None
     metrics: dict[str, float]
-    model: FrequencyTRF
+    model: TRF
 
-    @property
-    def fft_trf_kernel(self) -> np.ndarray:
-        """Compatibility alias for the old kernel attribute name."""
-
-        return self.fftrf_kernel
 
 
 def default_kernel(
@@ -151,7 +146,7 @@ def compare_simulated_kernels(
         seed=seed,
     )
 
-    model = FrequencyTRF(direction=1)
+    model = TRF(direction=1)
     model.train(
         stimulus=stimulus,
         response=response,
