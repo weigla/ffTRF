@@ -25,7 +25,7 @@ example that matches their workflow.
 | Script | Use case |
 | --- | --- |
 | `compare_with_mtrf.py` | Synthetic kernel comparison against time-domain references |
-| `example_mtrf_sample_eeg.py` | Public speech-EEG comparison against `mTRF` |
+| `example_mtrf_sample_eeg.py` | Public speech-EEG comparison against `mTRF`, with `neg_mse` lambda selection and held-out Pearson reporting for a forward benchmark plus a backward compressed-envelope benchmark that reconstructs a `p=0.4` broadband target using segmented Hann windows and a wider lambda search in ffTRF |
 | `benchmark_runtime.py` | Runtime benchmark against `mTRF` under several scenarios |
 
 ## Which Example Should I Start With?

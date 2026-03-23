@@ -9,7 +9,15 @@ from .estimator import (
     SpectralMethod,
     _USE_STORED_TRIAL_WEIGHTS,
 )
-from .metrics import MetricSpec, _resolve_metric, available_metrics, explained_variance_score, pearsonr, r2_score
+from .metrics import (
+    MetricSpec,
+    _resolve_metric,
+    available_metrics,
+    explained_variance_score,
+    neg_mse,
+    pearsonr,
+    r2_score,
+)
 from .prediction import (
     _compute_bootstrap_interval_from_cache,
     _extract_impulse_response,
@@ -62,6 +70,7 @@ from .utils import (
     _resolve_segment_length,
     _resolve_phase_unit,
     _smallest_positive_frequency,
+    suggest_segment_settings,
     _validate_average_arg,
     _validate_bands,
     _warn_if_cv_arguments_are_unused,

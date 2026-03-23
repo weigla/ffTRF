@@ -215,7 +215,7 @@ def fit_mtrf_kernel(
     tmax: float,
     regularization: float,
 ) -> np.ndarray | None:
-    """Fit ``mTRFpy`` if available and return its single-feature kernel."""
+    """Fit ``mTRF`` if available and return its single-feature kernel."""
 
     try:
         from mtrf.model import TRF
@@ -263,7 +263,7 @@ def plot_kernel_comparison(
         color="#C84C09",
     )
     if result.mtrf_kernel is not None:
-        ax.plot(times_ms, result.mtrf_kernel, label="mTRFpy", linewidth=1.6, color="#3366CC")
+        ax.plot(times_ms, result.mtrf_kernel, label="mTRF", linewidth=1.6, color="#3366CC")
 
     ax.axhline(0.0, color="#999999", linewidth=0.8)
     ax.set_xlabel("Lag (ms)")

@@ -169,6 +169,8 @@ setting.
 - Walk through the intended lifecycle in [Core Workflow](guides/core-workflow.md)
 - Learn the array rules in [Inputs and Shapes](guides/inputs-and-shapes.md)
 - Learn how regularization search works in [Regularization and CV](guides/regularization.md)
+- Learn how to choose segment length and windowing in
+  [Choosing Segment Settings](guides/choosing-segment-settings.md)
 - See the multitaper workflow in [Multitaper Estimation](guides/multitaper.md)
 - Explore time-frequency views in [Frequency-Resolved Analysis](guides/frequency-resolved.md)
 - Explore spectral inspection tools in

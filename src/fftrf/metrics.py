@@ -129,6 +129,36 @@ def explained_variance_score(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarr
     return out
 
 
+def neg_mse(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """Compute column-wise negative mean squared error.
+
+    Parameters
+    ----------
+    y_true:
+        Observed samples arranged as ``(n_samples, n_outputs)``.
+    y_pred:
+        Predicted samples with the same shape as ``y_true``.
+
+    Returns
+    -------
+    numpy.ndarray
+        One negative-MSE score per output column.
+
+    Notes
+    -----
+    The sign convention matches :func:`mtrf.stats.neg_mse`: larger values are
+    better because the underlying MSE is multiplied by ``-1``. Despite the
+    name, this function is therefore directly suitable for cross-validation
+    model selection in :class:`TRF`.
+    """
+
+    y_true = _ensure_2d(y_true, "y_true")
+    y_pred = _ensure_2d(y_pred, "y_pred")
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same shape.")
+
+    return -np.mean((y_true - y_pred) ** 2, axis=0)
+
 
 _METRIC_REGISTRY: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
     "pearsonr": pearsonr,
@@ -136,6 +166,7 @@ _METRIC_REGISTRY: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
     "r2_score": r2_score,
     "explained_variance": explained_variance_score,
     "explained_variance_score": explained_variance_score,
+    "neg_mse": neg_mse,
 }
 
 

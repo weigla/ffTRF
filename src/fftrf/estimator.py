@@ -101,8 +101,9 @@ class TRF:
     metric:
         Callable or built-in metric name used to score predictions. It must
         accept ``(y_true, y_pred)`` and return one score per output column.
-        Built-ins currently include ``"pearsonr"``, ``"r2"``, and
-        ``"explained_variance"``. This metric does not change the underlying
+        Built-ins currently include ``"pearsonr"``, ``"r2"``,
+        ``"explained_variance"``, and ``"neg_mse"``.
+        This metric does not change the underlying
         TRF solver: fitting is still ridge-regularized spectral deconvolution.
         The metric is only used when scoring predictions, selecting among
         regularization candidates during cross-validation, and returning scores

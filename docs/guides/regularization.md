@@ -123,6 +123,8 @@ well:
 - windowing can reduce spectral leakage in the standard estimator
 
 If a model feels unstable, consider segment settings alongside ridge values.
+The dedicated [Choosing Segment Settings](choosing-segment-settings.md) guide
+collects the practical rules of thumb in one place.
 
 ## Practical Advice
 

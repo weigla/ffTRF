@@ -13,6 +13,7 @@ import warnings
 import numpy as np
 
 RegularizationSpec = float | tuple[float, ...]
+_NICE_SEGMENT_DURATIONS = np.asarray([0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0], dtype=float)
 
 
 def _resolve_phase_unit(phase_unit: str) -> str:
@@ -143,6 +144,103 @@ def _resolve_segment_length(
     if not np.isfinite(duration) or duration <= 0.0:
         raise ValueError("segment_duration must be finite and positive.")
     return max(1, int(round(duration * float(fs))))
+
+
+def suggest_segment_settings(
+    *,
+    fs: float,
+    tmin: float,
+    tmax: float,
+    trial_duration: float | None = None,
+) -> dict[str, int | float | str | None]:
+    """Suggest practical segment settings for the standard spectral estimator.
+
+    This helper is meant as a lightweight starting point for choosing
+    ``segment_length`` / ``segment_duration`` and ``window`` when you use the
+    default ``spectral_method="standard"`` workflow. The heuristic is simple:
+
+    - keep the segment clearly longer than the lag window
+    - prefer full-trial spectra when trials are already short
+    - otherwise default to overlapping Hann-windowed segments
+
+    Parameters
+    ----------
+    fs:
+        Sampling rate in Hz.
+    tmin, tmax:
+        Lag window, in seconds, that you plan to extract from the fitted TRF.
+    trial_duration:
+        Optional approximate trial duration in seconds. When supplied, the
+        helper can decide whether a full-trial spectrum is more sensible than
+        splitting each trial into shorter overlapping segments.
+
+    Returns
+    -------
+    dict
+        Dictionary with the keys ``segment_length``, ``segment_duration``,
+        ``overlap``, and ``window``. When a full-trial estimate is suggested,
+        both segment fields are ``None``, ``overlap`` is ``0.0``, and
+        ``window`` is ``None``.
+
+    Notes
+    -----
+    The returned values are intended as rule-of-thumb defaults, not as an
+    optimizer. If you later switch to ``train_multitaper(...)`` or
+    ``spectral_method="multitaper"``, you can usually keep the suggested
+    ``segment_duration`` and ``overlap`` but should set ``window=None``.
+    """
+
+    sampling_rate = float(fs)
+    if not np.isfinite(sampling_rate) or sampling_rate <= 0.0:
+        raise ValueError("fs must be finite and positive.")
+
+    lag_start = float(tmin)
+    lag_stop = float(tmax)
+    if not np.isfinite(lag_start) or not np.isfinite(lag_stop) or lag_stop <= lag_start:
+        raise ValueError("tmax must be finite and greater than tmin.")
+
+    lag_span = lag_stop - lag_start
+
+    resolved_trial_duration = None
+    if trial_duration is not None:
+        resolved_trial_duration = float(trial_duration)
+        if not np.isfinite(resolved_trial_duration) or resolved_trial_duration <= 0.0:
+            raise ValueError("trial_duration must be finite and positive when provided.")
+
+    # Very short trials are usually better treated as one segment instead of
+    # forcing a tiny Hann-windowed FFT estimate.
+    if resolved_trial_duration is not None and resolved_trial_duration <= max(1.0, 3.0 * lag_span):
+        return {
+            "segment_length": None,
+            "segment_duration": None,
+            "overlap": 0.0,
+            "window": None,
+        }
+
+    target_duration = max(1.0, 6.0 * lag_span)
+    if resolved_trial_duration is not None:
+        target_duration = min(target_duration, 0.5 * resolved_trial_duration)
+
+    candidate_durations = _NICE_SEGMENT_DURATIONS
+    if resolved_trial_duration is not None:
+        candidate_durations = candidate_durations[candidate_durations <= 0.5 * resolved_trial_duration + 1e-12]
+
+    if candidate_durations.size == 0:
+        return {
+            "segment_length": None,
+            "segment_duration": None,
+            "overlap": 0.0,
+            "window": None,
+        }
+
+    segment_duration_value = float(candidate_durations[np.argmin(np.abs(candidate_durations - target_duration))])
+    segment_length_value = max(1, int(round(segment_duration_value * sampling_rate)))
+    return {
+        "segment_length": segment_length_value,
+        "segment_duration": segment_duration_value,
+        "overlap": 0.5,
+        "window": "hann",
+    }
 
 
 def _resolve_k_folds(k: int | str) -> int:

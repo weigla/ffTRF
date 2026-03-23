@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare ffTRF kernels against time-domain ridge and mTRFpy.
+"""Compare ffTRF kernels against time-domain ridge and mTRF.
 
 Examples
 --------
@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--skip-mtrf",
         action="store_true",
-        help="Skip the optional mTRFpy fit even if the package is installed.",
+        help="Skip the optional mTRF fit even if the package is installed.",
     )
     parser.add_argument(
         "--output",
@@ -108,7 +108,7 @@ def main() -> None:
     for key, value in result.metrics.items():
         print(f"  {key}: {value:.4f}")
     if result.mtrf_kernel is None and not args.skip_mtrf:
-        print("  mTRFpy was not available; only ffTRF and time-domain ridge were compared.")
+        print("  mTRF was not available; only ffTRF and time-domain ridge were compared.")
 
     plot_kernel_comparison(
         result,

@@ -95,6 +95,8 @@ That has a few practical consequences:
   conventions and direction-dependent behavior
 - [Regularization and CV](guides/regularization.md): direct fits, CV grids, and
   banded ridge
+- [Choosing Segment Settings](guides/choosing-segment-settings.md): practical
+  defaults for `segment_duration`, overlap, and windowing
 - [Multitaper Estimation](guides/multitaper.md): when and how to use DPSS
 - [Frequency-Resolved Analysis](guides/frequency-resolved.md): lag-frequency
   views of the fitted kernel

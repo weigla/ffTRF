@@ -17,6 +17,7 @@ with the same ridge-regularized spectral solver.
 - `pearsonr`: default correlation-based score
 - `r2_score`: coefficient of determination
 - `explained_variance_score`: variance-based goodness of fit
+- `neg_mse`: mTRF-compatible negative MSE where larger values are better
 - `available_metrics()`: list built-in metric names accepted by `TRF(metric=...)`
 
 ## Custom Metrics
@@ -28,6 +29,10 @@ You can also pass your own callable to `TRF(metric=...)`. A custom metric must:
 - use "larger is better" semantics if you want cross-validation to pick the
   best value sensibly
 
+For compatibility with `mTRF`, `ffTRF.neg_mse` follows the same "negative MSE"
+convention: larger values are still better during cross-validation, even
+though the underlying quantity is the mean squared error.
+
 ::: fftrf.available_metrics
 
 ::: fftrf.pearsonr
@@ -35,3 +40,5 @@ You can also pass your own callable to `TRF(metric=...)`. A custom metric must:
 ::: fftrf.r2_score
 
 ::: fftrf.explained_variance_score
+
+::: fftrf.neg_mse

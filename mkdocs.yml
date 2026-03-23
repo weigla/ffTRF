@@ -10,7 +10,7 @@ theme:
 plugins:
   - search
   - mkdocs-jupyter:
-      execute: false
+      execute: true
       include:
         - "*.ipynb"
       include_source: true
@@ -34,6 +34,7 @@ nav:
   - Guides:
       - Core Workflow: guides/core-workflow.md
       - Inputs and Shapes: guides/inputs-and-shapes.md
+      - Choosing Segment Settings: guides/choosing-segment-settings.md
       - Regularization and CV: guides/regularization.md
       - Multitaper Estimation: guides/multitaper.md
       - Frequency-Resolved Analysis: guides/frequency-resolved.md
@@ -48,5 +49,6 @@ nav:
       - TRF Estimator: reference/trf.md
       - Result Containers: reference/results.md
       - Metrics: reference/metrics.md
+      - Segment Settings Helper: reference/settings.md
       - Preprocessing Helpers: reference/preprocessing.md
   - Development: development.md

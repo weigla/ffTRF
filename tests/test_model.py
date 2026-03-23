@@ -21,9 +21,11 @@ from fftrf import (
     explained_variance_score,
     half_wave_rectify,
     inverse_variance_weights,
+    neg_mse,
     pearsonr,
     r2_score,
     resample_signal,
+    suggest_segment_settings,
 )
 
 
@@ -787,8 +789,10 @@ def test_builtin_metric_helpers_and_registry() -> None:
 
     assert "r2" in available_metrics()
     assert "explained_variance" in available_metrics()
+    assert "neg_mse" in available_metrics()
     assert float(r2_score(y_true, y_pred)[0]) > 0.95
     assert float(explained_variance_score(y_true, y_pred)[0]) > 0.95
+    assert float(neg_mse(y_true, y_pred)[0]) == pytest.approx(-0.0225)
 
 
 def test_banded_regularization_matches_scalar_ridge_for_equal_penalties() -> None:
@@ -912,6 +916,39 @@ def test_frequency_trf_supports_named_metric_and_multitaper() -> None:
     assert model.n_tapers == 4
     assert model.time_bandwidth == pytest.approx(3.5)
     assert score > 0.75
+
+
+def test_trf_supports_negative_mse_metric() -> None:
+    rng = np.random.default_rng(124)
+    fs = 1_000
+    kernel = np.zeros(30)
+    kernel[2] = 0.7
+    kernel[8] = -0.2
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.03,
+    )
+
+    model = TRF(direction=1, metric="neg_mse")
+    cv_scores = model.train(
+        stimulus=stimulus[:-1],
+        response=response[:-1],
+        fs=fs,
+        tmin=0.0,
+        tmax=0.030,
+        regularization=np.logspace(-5, -1, 5),
+        k=3,
+        segment_duration=0.512,
+    )
+
+    _, score = model.predict(stimulus=stimulus[-1], response=response[-1])
+    assert cv_scores.shape == (5,)
+    assert model.metric_name == "neg_mse"
+    assert score < 0.0
 
 
 def test_frequency_trf_diagnostics_returns_coherence() -> None:
@@ -1108,6 +1145,38 @@ def test_multichannel_prediction_and_helpers() -> None:
 
     resampled = resample_signal(np.arange(100.0), orig_fs=100.0, target_fs=50.0)
     assert abs(resampled.shape[0] - 50) <= 1
+
+
+def test_suggest_segment_settings_prefers_overlapping_hann_segments() -> None:
+    suggestion = suggest_segment_settings(
+        fs=128.0,
+        tmin=0.0,
+        tmax=0.350,
+        trial_duration=60.0,
+    )
+
+    assert suggestion == {
+        "segment_length": 256,
+        "segment_duration": 2.0,
+        "overlap": 0.5,
+        "window": "hann",
+    }
+
+
+def test_suggest_segment_settings_prefers_full_trial_for_short_trials() -> None:
+    suggestion = suggest_segment_settings(
+        fs=128.0,
+        tmin=0.0,
+        tmax=0.350,
+        trial_duration=1.0,
+    )
+
+    assert suggestion == {
+        "segment_length": None,
+        "segment_duration": None,
+        "overlap": 0.0,
+        "window": None,
+    }
 
 
 def test_frequency_trf_stores_bootstrap_interval() -> None:

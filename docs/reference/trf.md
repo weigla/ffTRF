@@ -50,6 +50,10 @@ These parameters appear repeatedly across the API:
 - `trial_weights`: optional weighting over trials during aggregation
 - `input_index`, `output_index`: which predictor/target pair to inspect or plot
 
+If you want a first guess for the segment-related arguments, see
+[`suggest_segment_settings`](settings.md) and the
+[Choosing Segment Settings](../guides/choosing-segment-settings.md) guide.
+
 ## What Training Stores
 
 After a successful fit, the estimator keeps enough state to support prediction,
