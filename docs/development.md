@@ -29,6 +29,13 @@ pip install -e ".[test]"
 pip install -e ".[docs]"
 ```
 
+Use the Pixi `docs` environment for the most reproducible site builds, because
+CI builds the documentation from the lockfile-backed toolchain:
+
+```bash
+pixi run -e docs docs-build
+```
+
 ## Package Layout
 
 - `src/fftrf/estimator.py`: `TRF`

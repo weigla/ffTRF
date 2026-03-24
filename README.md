@@ -120,6 +120,12 @@ pip install -e ".[compare]"
 pip install -e ".[docs]"
 ```
 
+For docs builds, prefer the locked Pixi environment:
+
+```bash
+pixi run -e docs docs-build
+```
+
 For an existing Pixi project, you can link `ffTRF` directly from GitHub via
 Pixi's `pypi-dependencies`:
 

@@ -28,6 +28,13 @@ pip install -e ".[test]"
 pip install -e ".[docs]"
 ```
 
+For documentation builds, the locked Pixi environment is the most reproducible
+option:
+
+```bash
+pixi run -e docs docs-build
+```
+
 For an existing Pixi project, you can link `ffTRF` directly from GitHub via
 Pixi's `pypi-dependencies`:
 

@@ -74,6 +74,12 @@ pip install -e ".[compare]"
 pip install -e ".[docs]"
 ```
 
+For docs builds, prefer the lockfile-backed Pixi command:
+
+```bash
+pixi run -e docs docs-build
+```
+
 ## What ffTRF Actually Fits
 
 The estimator solves for a complex transfer function in the frequency domain
