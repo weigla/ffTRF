@@ -106,3 +106,7 @@ trial-bootstrap interval is not meaningful in the same way.
   kernel.
 - Keep your natural trial boundaries intact if you plan to use weighting or
   bootstrap later.
+- Use `permutation_test(...)` when you want a null-distribution-based
+  significance check for held-out prediction scores rather than an uncertainty
+  interval on the kernel itself. The dedicated
+  [Significance Testing](significance-testing.md) guide covers that workflow.

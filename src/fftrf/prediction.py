@@ -17,7 +17,7 @@ from .spectral import (
     _scalar_regularization_grid,
     _solve_transfer_function,
 )
-from .utils import _resolve_n_jobs
+from .utils import _aggregate_metric, _resolve_n_jobs
 
 @dataclass(slots=True)
 class _PreparedPredictionTrial:
@@ -73,6 +73,240 @@ def _slice_interval(
 def _validate_confidence_level(level: float, *, name: str) -> None:
     if not 0.0 < float(level) < 1.0:
         raise ValueError(f"{name} must lie strictly between 0 and 1.")
+
+
+def _resolve_permutation_surrogate(surrogate: str) -> str:
+    resolved = str(surrogate).strip().lower()
+    if resolved not in {"circular_shift", "trial_shuffle"}:
+        raise ValueError(
+            "surrogate must be 'circular_shift' or 'trial_shuffle'."
+        )
+    return resolved
+
+
+def _resolve_permutation_tail(tail: str) -> str:
+    resolved = str(tail).strip().lower()
+    if resolved in {"two-sided", "two_sided"}:
+        return "two-sided"
+    if resolved not in {"greater", "less"}:
+        raise ValueError("tail must be 'greater', 'less', or 'two-sided'.")
+    return resolved
+
+
+def _sample_non_identity_permutation(
+    rng: np.random.Generator,
+    *,
+    n_trials: int,
+) -> np.ndarray:
+    identity = np.arange(n_trials, dtype=int)
+    for _ in range(32):
+        order = rng.permutation(n_trials)
+        if not np.array_equal(order, identity):
+            return order
+    return np.roll(identity, 1)
+
+
+def _circular_shift_bounds(
+    *,
+    n_samples: int,
+    fs: float,
+    min_shift: float | None,
+) -> tuple[int, int]:
+    if n_samples < 2:
+        raise ValueError("circular_shift requires trials with at least two samples.")
+
+    if min_shift is None:
+        min_shift_samples = 0
+    else:
+        min_shift_value = float(min_shift)
+        if not np.isfinite(min_shift_value) or min_shift_value < 0.0:
+            raise ValueError("min_shift must be finite and non-negative when provided.")
+        min_shift_samples = int(round(min_shift_value * float(fs)))
+
+    lower = max(1, min_shift_samples)
+    upper = n_samples - lower
+    if upper < lower:
+        raise ValueError(
+            "min_shift is too large for at least one trial under circular_shift."
+        )
+    return lower, upper
+
+
+def _build_permutation_specs(
+    *,
+    target_trials: Sequence[np.ndarray],
+    surrogate: str,
+    fs: float,
+    min_shift: float | None,
+    n_permutations: int,
+    seed: int | None,
+) -> list[np.ndarray]:
+    rng = np.random.default_rng(seed)
+    n_trials = len(target_trials)
+
+    if surrogate == "trial_shuffle":
+        if n_trials < 2:
+            raise ValueError("trial_shuffle requires at least two evaluation trials.")
+        lengths = {trial.shape[0] for trial in target_trials}
+        if len(lengths) != 1:
+            raise ValueError(
+                "trial_shuffle requires all evaluation trials to have the same sample count."
+            )
+        return [
+            _sample_non_identity_permutation(rng, n_trials=n_trials)
+            for _ in range(n_permutations)
+        ]
+
+    specs: list[np.ndarray] = []
+    for _ in range(n_permutations):
+        shifts = np.zeros(n_trials, dtype=int)
+        for trial_index, target_trial in enumerate(target_trials):
+            lower, upper = _circular_shift_bounds(
+                n_samples=target_trial.shape[0],
+                fs=fs,
+                min_shift=min_shift,
+            )
+            shifts[trial_index] = int(rng.integers(lower, upper + 1))
+        specs.append(shifts)
+    return specs
+
+
+def _surrogate_target_trials(
+    target_trials: Sequence[np.ndarray],
+    *,
+    surrogate: str,
+    spec: np.ndarray,
+) -> list[np.ndarray]:
+    if surrogate == "trial_shuffle":
+        return [target_trials[int(index)] for index in spec.tolist()]
+    return [
+        np.roll(target_trial, int(shift), axis=0)
+        for target_trial, shift in zip(target_trials, spec, strict=True)
+    ]
+
+
+def _aggregate_null_scores(
+    scores: np.ndarray,
+    *,
+    average: bool | Sequence[int],
+) -> np.ndarray:
+    if average is False:
+        return scores
+    return np.asarray(
+        [_aggregate_metric(score, average) for score in scores],
+        dtype=float,
+    )
+
+
+def _permutation_p_value_and_z_score(
+    *,
+    observed_score: np.ndarray | float,
+    null_scores: np.ndarray,
+    tail: str,
+) -> tuple[np.ndarray | float, np.ndarray | float]:
+    observed = np.asarray(observed_score, dtype=float)
+    null_scores = np.asarray(null_scores, dtype=float)
+
+    scalar_output = observed.ndim == 0
+    if scalar_output:
+        observed = observed[np.newaxis]
+        null_scores = null_scores[:, np.newaxis]
+
+    if tail == "greater":
+        exceed = null_scores >= observed[np.newaxis, :]
+    elif tail == "less":
+        exceed = null_scores <= observed[np.newaxis, :]
+    else:
+        center = null_scores.mean(axis=0, keepdims=True)
+        exceed = np.abs(null_scores - center) >= np.abs(observed[np.newaxis, :] - center)
+
+    p_value = (1.0 + exceed.sum(axis=0)) / (null_scores.shape[0] + 1.0)
+    null_mean = null_scores.mean(axis=0)
+    null_std = null_scores.std(axis=0, ddof=1)
+    z_score = np.zeros_like(null_mean, dtype=float)
+
+    finite = null_std > np.finfo(float).eps
+    z_score[finite] = (observed[finite] - null_mean[finite]) / null_std[finite]
+    positive = (~finite) & (observed > null_mean + np.finfo(float).eps)
+    negative = (~finite) & (observed < null_mean - np.finfo(float).eps)
+    z_score[positive] = np.inf
+    z_score[negative] = -np.inf
+
+    if scalar_output:
+        return float(p_value[0]), float(z_score[0])
+    return p_value, z_score
+
+
+def _compute_permutation_test_scores(
+    *,
+    prediction_trials: Sequence[np.ndarray],
+    target_trials: Sequence[np.ndarray],
+    metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    average: bool | Sequence[int],
+    fs: float,
+    n_permutations: int,
+    surrogate: str,
+    min_shift: float | None,
+    tail: str,
+    seed: int | None,
+    n_jobs: int = 1,
+) -> tuple[np.ndarray | float, np.ndarray, np.ndarray | float, np.ndarray | float]:
+    if n_permutations <= 0:
+        raise ValueError("n_permutations must be positive.")
+
+    resolved_surrogate = _resolve_permutation_surrogate(surrogate)
+    resolved_tail = _resolve_permutation_tail(tail)
+    observed_per_output = _score_prediction_trials(
+        metric,
+        target_trials,
+        prediction_trials,
+    )
+    permutation_specs = _build_permutation_specs(
+        target_trials=target_trials,
+        surrogate=resolved_surrogate,
+        fs=fs,
+        min_shift=min_shift,
+        n_permutations=n_permutations,
+        seed=seed,
+    )
+    null_per_output = np.zeros(
+        (n_permutations, observed_per_output.shape[0]),
+        dtype=float,
+    )
+
+    def _score_surrogate(spec: np.ndarray) -> np.ndarray:
+        return _score_prediction_trials(
+            metric,
+            _surrogate_target_trials(
+                target_trials,
+                surrogate=resolved_surrogate,
+                spec=spec,
+            ),
+            prediction_trials,
+        )
+
+    resolved_n_jobs = min(_resolve_n_jobs(n_jobs), n_permutations)
+    if resolved_n_jobs == 1:
+        for permutation_index, spec in enumerate(permutation_specs):
+            null_per_output[permutation_index] = _score_surrogate(spec)
+    else:
+        with ThreadPoolExecutor(max_workers=resolved_n_jobs) as executor:
+            futures = {
+                executor.submit(_score_surrogate, spec): permutation_index
+                for permutation_index, spec in enumerate(permutation_specs)
+            }
+            for future in as_completed(futures):
+                permutation_index = futures[future]
+                null_per_output[permutation_index] = future.result()
+
+    observed_score = _aggregate_metric(observed_per_output, average)
+    null_scores = _aggregate_null_scores(null_per_output, average=average)
+    p_value, z_score = _permutation_p_value_and_z_score(
+        observed_score=observed_score,
+        null_scores=null_scores,
+        tail=resolved_tail,
+    )
+    return observed_score, null_scores, p_value, z_score
 
 
 def _compute_bootstrap_interval_from_cache(

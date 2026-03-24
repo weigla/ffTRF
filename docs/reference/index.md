@@ -8,7 +8,7 @@ surface.
 - Read [TRF Estimator](trf.md) for the main class and its shared parameter
   semantics.
 - Read [Result Containers](results.md) for the objects returned by the
-  frequency-resolved, transfer-function, and diagnostic helpers.
+  frequency-resolved, transfer-function, diagnostic, and significance helpers.
 - Read [Metrics](metrics.md) for built-in scoring functions and custom-metric
   requirements.
 - Read [Segment Settings Helper](settings.md) for the public rule-of-thumb
@@ -18,9 +18,11 @@ surface.
 
 ## Public API Summary
 
-- `TRF`: train, predict, score, inspect, plot, diagnose, save, and load models
+- `TRF`: train, predict, score, run score-level or refit-based significance
+  tests, inspect, plot, diagnose, save, and load models
 - `TRFDiagnostics` / `CrossSpectralDiagnostics`: observed-vs-predicted spectral
   diagnostics
+- `PermutationTestResult`: held-out score significance against surrogate nulls
 - `FrequencyResolvedWeights`: frequency-by-lag decomposition of the kernel
 - `TimeFrequencyPower`: spectrogram-like power view of the kernel
 - `TransferFunctionComponents`: magnitude, phase, and group delay for one

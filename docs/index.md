@@ -14,6 +14,8 @@ The main estimator is `fftrf.TRF`. It supports:
 - multi-trial input as Python lists of arrays
 - time-domain kernel export for interpretation
 - bootstrap confidence intervals
+- permutation-based held-out score significance testing
+- optional stronger refit-based null-model significance testing
 - transfer-function and cross-spectral diagnostics
 - frequency-resolved lag-domain views of recovered kernels
 
@@ -26,7 +28,8 @@ The typical workflow is:
    backward decoding
 3. call `train(...)` or `train_multitaper(...)`
 4. inspect the fitted kernel with `plot(...)` or `plot_grid(...)`
-5. evaluate generalization with `predict(...)` or `score(...)`
+5. evaluate generalization with `predict(...)`, `score(...)`, or
+   `permutation_test(...)`
 6. inspect spectral behavior with transfer-function and coherence diagnostics
 7. save the fitted model with `save(...)` if you want to reuse it later
 
@@ -104,6 +107,8 @@ That has a few practical consequences:
   spectral inspection tools
 - [Trial Weighting and Bootstrap](guides/trial-weighting-and-bootstrap.md):
   weighting noisy trials and quantifying uncertainty
+- [Significance Testing](guides/significance-testing.md): permutation-based
+  null distributions for held-out scores
 - [Notebooks](notebooks/getting-started.ipynb): rendered walk-throughs with the
   same API used in the example scripts
 - [Reference](reference/index.md): detailed function-by-function API

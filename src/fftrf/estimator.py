@@ -13,15 +13,23 @@ from scipy.signal import hilbert
 
 from .metrics import MetricSpec, pearsonr, _resolve_metric
 from .prediction import (
+    _aggregate_null_scores,
+    _build_permutation_specs,
     _compute_bootstrap_interval_from_cache,
+    _compute_permutation_test_scores,
     _extract_impulse_response,
+    _permutation_p_value_and_z_score,
     _predict_trials_from_weights,
+    _resolve_permutation_surrogate,
+    _resolve_permutation_tail,
     _score_prediction_trials,
     _score_regularization_grid_for_fold,
     _slice_interval,
+    _surrogate_target_trials,
     _validate_confidence_level,
 )
 from .results import (
+    PermutationTestResult,
     FrequencyResolvedWeights,
     TRFDiagnostics,
     TimeFrequencyPower,
@@ -72,6 +80,8 @@ class TRF:
     - call :meth:`train` to fit the model
     - call :meth:`predict` to generate predicted responses or stimuli
     - call :meth:`score` to evaluate predictions
+    - call :meth:`permutation_test` to assess held-out prediction scores
+      against surrogate nulls
     - call :meth:`plot` to visualize the fitted kernel
     - call :meth:`plot_grid` to visualize all input/output kernels at once
     - call :meth:`frequency_resolved_weights` or
@@ -200,6 +210,7 @@ class TRF:
         self.bootstrap_interval: np.ndarray | None = None
         self.bootstrap_level: float | None = None
         self.bootstrap_samples: int | None = None
+        self._fit_config: dict[str, object] | None = None
 
     def train(
         self,
@@ -400,6 +411,31 @@ class TRF:
         self.bootstrap_interval = None
         self.bootstrap_level = None
         self.bootstrap_samples = None
+        self._fit_config = {
+            "fs": float(fs),
+            "tmin": float(tmin),
+            "tmax": float(tmax),
+            "regularization": _copy_value(regularization),
+            "bands": None if resolved_bands is None else tuple(resolved_bands),
+            "segment_length": None if segment_length is None else int(segment_length),
+            "segment_duration": None,
+            "overlap": float(overlap),
+            "n_fft": None if n_fft is None else int(n_fft),
+            "spectral_method": spectral_method,
+            "time_bandwidth": float(time_bandwidth),
+            "n_tapers": None if n_tapers is None else int(n_tapers),
+            "window": _copy_value(window),
+            "detrend": detrend,
+            "k": int(k),
+            "average": _copy_value(average),
+            "seed": seed,
+            "show_progress": bool(show_progress),
+            "n_jobs": n_jobs,
+            "trial_weights": _copy_value(trial_weights),
+            "bootstrap_samples": int(bootstrap_samples),
+            "bootstrap_level": float(bootstrap_level),
+            "bootstrap_seed": bootstrap_seed,
+        }
 
         needs_cache = len(feature_regularization_values) > 1 or int(bootstrap_samples) > 0
         spectral_cache = None
@@ -1844,6 +1880,315 @@ class TRF:
         self.bootstrap_samples = int(n_bootstraps)
         return interval, times
 
+    def permutation_test(
+        self,
+        stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
+        response: np.ndarray | Sequence[np.ndarray] | None = None,
+        *,
+        n_permutations: int = 1000,
+        average: bool | Sequence[int] = True,
+        tmin: float | None = None,
+        tmax: float | None = None,
+        surrogate: str = "circular_shift",
+        min_shift: float | None = None,
+        tail: str = "greater",
+        seed: int | None = None,
+        n_jobs: int | None = 1,
+    ) -> PermutationTestResult:
+        """Estimate score significance against a surrogate null distribution.
+
+        This method evaluates a fitted model on aligned data, then compares the
+        observed prediction score against surrogate scores obtained from the
+        same predictions and a permuted target side. It answers the question
+        "is this held-out score larger than would be expected under a null
+        alignment?" rather than the stronger and slower "would the entire
+        training pipeline beat chance if retrained on permuted data?".
+
+        Parameters
+        ----------
+        stimulus, response:
+            Evaluation data using the same directional conventions as
+            :meth:`score`. Forward models require both ``stimulus`` and
+            ``response``. Backward models require both ``response`` and
+            ``stimulus``.
+        n_permutations:
+            Number of surrogate scores used to form the null distribution.
+        average:
+            Score reduction applied to the observed and surrogate scores. This
+            follows the same rules as :meth:`score`.
+        tmin, tmax:
+            Optional lag window used during prediction before scoring.
+        surrogate:
+            Strategy used to break the alignment between predictions and
+            observed targets. ``"circular_shift"`` rolls each evaluation trial
+            by a random non-zero offset and works for single-trial or
+            multi-trial data. ``"trial_shuffle"`` permutes whole target trials
+            and therefore requires at least two equal-length evaluation trials.
+        min_shift:
+            Minimum circular shift, in seconds, used when
+            ``surrogate="circular_shift"``. ``None`` allows any non-zero shift.
+        tail:
+            Tail convention for the p-value calculation: ``"greater"``,
+            ``"less"``, or ``"two-sided"``.
+        seed:
+            Optional random seed for reproducible surrogate generation.
+        n_jobs:
+            Number of worker threads used to score the surrogate targets.
+            ``1`` runs serially and ``-1`` uses all available cores.
+
+        Returns
+        -------
+        PermutationTestResult
+            Container with the observed score, surrogate null scores, p-value,
+            and z-score.
+
+        Notes
+        -----
+        All built-in metrics in ``ffTRF`` use the "larger is better" convention,
+        so ``tail="greater"`` is the natural default. The returned null scores
+        follow the same scalar-vs-array contract as :meth:`score`: aggregated
+        scores are stored as a 1D array of length ``n_permutations``, while
+        ``average=False`` keeps one surrogate score per output.
+        """
+
+        if self.weights is None or self.fs is None:
+            raise ValueError("Model must be trained before permutation testing.")
+
+        predictor_input = stimulus if self.direction == 1 else response
+        target_input = response if self.direction == 1 else stimulus
+        predictor_name = "stimulus" if self.direction == 1 else "response"
+        target_name = "response" if self.direction == 1 else "stimulus"
+        if predictor_input is None or target_input is None:
+            raise ValueError(
+                f"{predictor_name} and {target_name} are both required for permutation testing."
+            )
+
+        predictor_trials, _ = _coerce_trials(predictor_input, predictor_name)
+        target_trials, _ = _coerce_trials(target_input, target_name)
+        _check_trial_lengths(predictor_trials, target_trials)
+        resolved_surrogate = _resolve_permutation_surrogate(surrogate)
+        resolved_tail = _resolve_permutation_tail(tail)
+
+        predictions, _ = self.predict(
+            stimulus=stimulus,
+            response=response,
+            average=False,
+            tmin=tmin,
+            tmax=tmax,
+        )
+        prediction_trials, _ = _coerce_trials(predictions, "prediction")
+        observed_score, null_scores, p_value, z_score = _compute_permutation_test_scores(
+            prediction_trials=prediction_trials,
+            target_trials=target_trials,
+            metric=self.metric,
+            average=average,
+            fs=float(self.fs),
+            n_permutations=int(n_permutations),
+            surrogate=resolved_surrogate,
+            min_shift=min_shift,
+            tail=resolved_tail,
+            seed=seed,
+            n_jobs=1 if n_jobs is None else n_jobs,
+        )
+        return PermutationTestResult(
+            observed_score=observed_score,
+            null_scores=null_scores,
+            p_value=p_value,
+            z_score=z_score,
+            tail=resolved_tail,
+            surrogate=resolved_surrogate,
+            n_permutations=int(n_permutations),
+        )
+
+    def refit_permutation_test(
+        self,
+        *,
+        train_stimulus: np.ndarray | Sequence[np.ndarray],
+        train_response: np.ndarray | Sequence[np.ndarray],
+        test_stimulus: np.ndarray | Sequence[np.ndarray],
+        test_response: np.ndarray | Sequence[np.ndarray],
+        n_permutations: int = 100,
+        average: bool | Sequence[int] = True,
+        surrogate: str = "circular_shift",
+        min_shift: float | None = None,
+        tail: str = "greater",
+        seed: int | None = None,
+        n_jobs: int | None = 1,
+        fit_n_jobs: int | None = 1,
+        fit_kwargs: dict[str, object] | None = None,
+    ) -> PermutationTestResult:
+        """Estimate a stronger null by retraining on surrogate-aligned data.
+
+        This method fits one model on the original training alignment and then
+        fits one fresh surrogate model per permutation after breaking the
+        predictor-target alignment on the training set. All models are scored
+        on the same held-out aligned evaluation data.
+
+        Compared with :meth:`permutation_test`, this is slower but answers a
+        stronger question: whether the full training pipeline, including
+        regularization selection, outperforms chance under a surrogate null.
+
+        Parameters
+        ----------
+        train_stimulus, train_response:
+            Training data used to fit the observed and surrogate models.
+        test_stimulus, test_response:
+            Held-out aligned evaluation data used to score every fitted model.
+        n_permutations:
+            Number of surrogate refits used to form the null distribution.
+        average:
+            Score reduction applied to the observed and surrogate scores. This
+            follows the same rules as :meth:`score`.
+        surrogate:
+            Strategy used to break the training alignment. ``"circular_shift"``
+            rolls each training target trial by a random non-zero offset.
+            ``"trial_shuffle"`` permutes whole training target trials and
+            therefore requires at least two equal-length training trials.
+        min_shift:
+            Minimum circular shift, in seconds, used when
+            ``surrogate="circular_shift"``.
+        tail:
+            Tail convention for the p-value calculation: ``"greater"``,
+            ``"less"``, or ``"two-sided"``.
+        seed:
+            Optional random seed for reproducible surrogate generation.
+        n_jobs:
+            Number of worker threads used across surrogate refits.
+        fit_n_jobs:
+            Number of worker threads used inside each individual refit.
+            The default ``1`` avoids nested oversubscription.
+        fit_kwargs:
+            Optional overrides for the stored fit configuration. When omitted,
+            the most recent training configuration of this estimator is reused,
+            except that bootstrap estimation is disabled and progress output is
+            suppressed during the surrogate refits.
+
+        Returns
+        -------
+        PermutationTestResult
+            Container with the observed held-out score, surrogate null scores,
+            p-value, and z-score.
+        """
+
+        train_stimulus_trials, _ = _coerce_trials(train_stimulus, "train_stimulus")
+        train_response_trials, _ = _coerce_trials(train_response, "train_response")
+        test_stimulus_trials, _ = _coerce_trials(test_stimulus, "test_stimulus")
+        test_response_trials, _ = _coerce_trials(test_response, "test_response")
+        _check_trial_lengths(train_stimulus_trials, train_response_trials)
+        _check_trial_lengths(test_stimulus_trials, test_response_trials)
+
+        train_x_trials, train_y_trials = self._get_xy(
+            train_stimulus_trials,
+            train_response_trials,
+        )
+        self._validate_dimensions(train_x_trials, train_y_trials)
+        test_x_trials, test_y_trials = self._get_xy(
+            test_stimulus_trials,
+            test_response_trials,
+        )
+        self._validate_dimensions(test_x_trials, test_y_trials)
+
+        train_config = self._resolve_refit_train_config(
+            fit_kwargs=fit_kwargs,
+            fit_n_jobs=fit_n_jobs,
+        )
+        resolved_surrogate = _resolve_permutation_surrogate(surrogate)
+        resolved_tail = _resolve_permutation_tail(tail)
+        permutation_specs = _build_permutation_specs(
+            target_trials=train_y_trials,
+            surrogate=resolved_surrogate,
+            fs=float(train_config["fs"]),
+            min_shift=min_shift,
+            n_permutations=int(n_permutations),
+            seed=seed,
+        )
+
+        def _fit_and_score(
+            local_train_stimulus: Sequence[np.ndarray],
+            local_train_response: Sequence[np.ndarray],
+            *,
+            local_train_config: dict[str, object],
+        ) -> np.ndarray:
+            refit = TRF(direction=self.direction, metric=self.metric)
+            refit.train(
+                stimulus=local_train_stimulus,
+                response=local_train_response,
+                **local_train_config,
+            )
+            return np.asarray(
+                refit.score(
+                    stimulus=test_stimulus,
+                    response=test_response,
+                    average=False,
+                ),
+                dtype=float,
+            )
+
+        observed_per_output = _fit_and_score(
+            train_stimulus_trials,
+            train_response_trials,
+            local_train_config=self._copy_refit_train_config(train_config),
+        )
+        null_per_output = np.zeros(
+            (int(n_permutations), observed_per_output.shape[0]),
+            dtype=float,
+        )
+
+        def _score_permutation(spec: np.ndarray) -> np.ndarray:
+            surrogate_targets = _surrogate_target_trials(
+                train_y_trials,
+                surrogate=resolved_surrogate,
+                spec=spec,
+            )
+            local_train_config = self._copy_refit_train_config(train_config)
+            local_train_config["trial_weights"] = self._surrogate_trial_weights(
+                local_train_config.get("trial_weights"),
+                surrogate=resolved_surrogate,
+                spec=spec,
+            )
+            if self.direction == 1:
+                local_train_stimulus = train_stimulus_trials
+                local_train_response = surrogate_targets
+            else:
+                local_train_stimulus = surrogate_targets
+                local_train_response = train_response_trials
+            return _fit_and_score(
+                local_train_stimulus,
+                local_train_response,
+                local_train_config=local_train_config,
+            )
+
+        resolved_n_jobs = min(_resolve_n_jobs(n_jobs), int(n_permutations))
+        if resolved_n_jobs == 1:
+            for permutation_index, spec in enumerate(permutation_specs):
+                null_per_output[permutation_index] = _score_permutation(spec)
+        else:
+            with ThreadPoolExecutor(max_workers=resolved_n_jobs) as executor:
+                futures = {
+                    executor.submit(_score_permutation, spec): permutation_index
+                    for permutation_index, spec in enumerate(permutation_specs)
+                }
+                for future in as_completed(futures):
+                    permutation_index = futures[future]
+                    null_per_output[permutation_index] = future.result()
+
+        observed_score = _aggregate_metric(observed_per_output, average)
+        null_scores = _aggregate_null_scores(null_per_output, average=average)
+        p_value, z_score = _permutation_p_value_and_z_score(
+            observed_score=observed_score,
+            null_scores=null_scores,
+            tail=resolved_tail,
+        )
+        return PermutationTestResult(
+            observed_score=observed_score,
+            null_scores=null_scores,
+            p_value=p_value,
+            z_score=z_score,
+            tail=resolved_tail,
+            surrogate=resolved_surrogate,
+            n_permutations=int(n_permutations),
+        )
+
     def predict(
         self,
         stimulus: np.ndarray | Sequence[np.ndarray] | None = None,
@@ -1957,7 +2302,9 @@ class TRF:
         """Score predictions without returning the predicted signals.
 
         This is a convenience wrapper around :meth:`predict` for workflows where
-        only the metric is needed.
+        only the metric is needed. Unlike :meth:`predict`, this method always
+        requires the observed target side because it returns only the metric,
+        not the predicted signals themselves.
 
         Parameters
         ----------
@@ -1969,6 +2316,13 @@ class TRF:
         numpy.ndarray or float
             Prediction score computed with the estimator's configured metric.
         """
+
+        target_input = response if self.direction == 1 else stimulus
+        target_name = "response" if self.direction == 1 else "stimulus"
+        if target_input is None:
+            raise ValueError(
+                f"{target_name} is required for score(). Pass the observed target side."
+            )
 
         _, metric = self.predict(
             stimulus=stimulus,
@@ -2191,6 +2545,8 @@ class TRF:
             self.time_bandwidth = None
         if not hasattr(self, "n_tapers"):
             self.n_tapers = None
+        if not hasattr(self, "_fit_config"):
+            self._fit_config = None
 
     def copy(self) -> "TRF":
         """Return a copy of the estimator and all learned arrays.
@@ -2207,6 +2563,60 @@ class TRF:
         for key, value in self.__dict__.items():
             setattr(copied, key, _copy_value(value))
         return copied
+
+    def _resolve_refit_train_config(
+        self,
+        *,
+        fit_kwargs: dict[str, object] | None,
+        fit_n_jobs: int | None,
+    ) -> dict[str, object]:
+        base_config = {} if self._fit_config is None else self._copy_refit_train_config(self._fit_config)
+        if fit_kwargs is not None:
+            if {"stimulus", "response"} & set(fit_kwargs):
+                raise ValueError("fit_kwargs must not include stimulus or response.")
+            for key, value in fit_kwargs.items():
+                base_config[key] = _copy_value(value)
+
+        required = {"fs", "tmin", "tmax", "regularization"}
+        missing = sorted(required.difference(base_config))
+        if missing:
+            missing_formatted = ", ".join(missing)
+            raise ValueError(
+                "refit_permutation_test requires a stored fit configuration or fit_kwargs "
+                f"containing: {missing_formatted}."
+            )
+
+        base_config["show_progress"] = False
+        base_config["bootstrap_samples"] = 0
+        base_config["bootstrap_seed"] = None
+        if fit_n_jobs is not None:
+            base_config["n_jobs"] = fit_n_jobs
+        elif "n_jobs" not in base_config:
+            base_config["n_jobs"] = 1
+        return base_config
+
+    @staticmethod
+    def _copy_refit_train_config(config: dict[str, object]) -> dict[str, object]:
+        return {key: _copy_value(value) for key, value in config.items()}
+
+    @staticmethod
+    def _surrogate_trial_weights(
+        trial_weights: object,
+        *,
+        surrogate: str,
+        spec: np.ndarray,
+    ) -> object:
+        copied = _copy_value(trial_weights)
+        if surrogate != "trial_shuffle" or copied is None or isinstance(copied, str):
+            return copied
+
+        weights = np.asarray(copied, dtype=float)
+        if weights.shape != spec.shape:
+            raise ValueError(
+                "Explicit trial_weights must match the number of training trials "
+                "when using surrogate='trial_shuffle'."
+            )
+        return weights[spec].copy()
 
     def _get_xy(
         self,

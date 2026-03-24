@@ -144,30 +144,53 @@ import numpy as np
 
 from fftrf import TRF, inverse_variance_weights
 
-rng = np.random.default_rng(0)
-fs = 1_000
+def simulate_trial(
+    rng: np.random.Generator,
+    *,
+    n_samples: int,
+    kernel: np.ndarray,
+    noise_scale: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    stimulus = rng.standard_normal((n_samples, 1))
+    response = np.convolve(stimulus[:, 0], kernel, mode="full")[:n_samples]
+    response += noise_scale * rng.standard_normal(n_samples)
+    return stimulus, response[:, np.newaxis]
 
-stimulus = [rng.standard_normal((8_000, 3)) for _ in range(4)]
-response = [rng.standard_normal((8_000, 2)) for _ in range(4)]
+
+rng = np.random.default_rng(0)
+fs = 512
+kernel = np.zeros(60)
+kernel[6] = 1.0
+kernel[18] = -0.4
+kernel[32] = 0.2
+
+trials = [simulate_trial(rng, n_samples=4_096, kernel=kernel, noise_scale=0.05) for _ in range(6)]
+stimulus = [trial_stimulus for trial_stimulus, _ in trials]
+response = [trial_response for _, trial_response in trials]
 
 model = TRF(direction=1)
 cv_scores = model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=stimulus[:-1],
+    response=response[:-1],
     fs=fs,
-    tmin=-0.050,
-    tmax=0.250,
-    regularization=np.logspace(-6, 1, 8),
-    segment_duration=2.048,
+    tmin=0.0,
+    tmax=kernel.shape[0] / fs,
+    regularization=np.logspace(-6, 0, 7),
+    segment_duration=1.0,
     overlap=0.5,
     window="hann",
     k="loo",
-    trial_weights=inverse_variance_weights(response),
+    trial_weights=inverse_variance_weights(response[:-1]),
 )
 
-prediction, score = model.predict(stimulus=stimulus, response=response)
+prediction = model.predict(stimulus=stimulus[-1])
+score = model.score(stimulus=stimulus[-1], response=response[-1])
 fig, ax = model.plot(input_index=0, output_index=0)
 ```
+
+This example uses a known simulated kernel and keeps the last trial held out,
+so `score` is a real generalization check rather than a training-set-only
+sanity check.
 
 ## Examples
 

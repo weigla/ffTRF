@@ -40,6 +40,7 @@ nav:
       - Frequency-Resolved Analysis: guides/frequency-resolved.md
       - Diagnostics and Transfer Functions: guides/diagnostics-and-transfer-functions.md
       - Trial Weighting and Bootstrap: guides/trial-weighting-and-bootstrap.md
+      - Significance Testing: guides/significance-testing.md
   - Examples: examples.md
   - Notebooks:
       - Getting Started Notebook: notebooks/getting-started.ipynb

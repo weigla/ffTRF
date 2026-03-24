@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  tests-and-smoke:
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
+      MPLCONFIGDIR: /tmp/matplotlib
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test and plotting dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]" "matplotlib>=3.8"
+
+      - name: Run test suite
+        run: python -m pytest -q
+
+      - name: Smoke test core examples
+        run: |
+          python examples/example_single_trial_single_channel.py
+          python examples/example_multi_trial_single_channel.py
+          python examples/example_backward_decoding.py
+          python examples/example_save_and_load.py

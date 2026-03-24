@@ -1,6 +1,7 @@
 from .model import (
     CrossSpectralDiagnostics,
     FrequencyResolvedWeights,
+    PermutationTestResult,
     TRF,
     TRFDiagnostics,
     TimeFrequencyPower,
@@ -17,6 +18,7 @@ from .utils import suggest_segment_settings
 __all__ = [
     "CrossSpectralDiagnostics",
     "FrequencyResolvedWeights",
+    "PermutationTestResult",
     "TRF",
     "TRFDiagnostics",
     "TimeFrequencyPower",

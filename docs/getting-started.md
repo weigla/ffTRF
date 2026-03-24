@@ -46,28 +46,47 @@ import numpy as np
 
 from fftrf import TRF, inverse_variance_weights
 
-rng = np.random.default_rng(0)
-fs = 1_000
+def simulate_trial(
+    rng: np.random.Generator,
+    *,
+    n_samples: int,
+    kernel: np.ndarray,
+    noise_scale: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    stimulus = rng.standard_normal((n_samples, 1))
+    response = np.convolve(stimulus[:, 0], kernel, mode="full")[:n_samples]
+    response += noise_scale * rng.standard_normal(n_samples)
+    return stimulus, response[:, np.newaxis]
 
-stimulus = [rng.standard_normal((8_000, 3)) for _ in range(4)]
-response = [rng.standard_normal((8_000, 2)) for _ in range(4)]
+
+rng = np.random.default_rng(0)
+fs = 512
+kernel = np.zeros(60)
+kernel[6] = 1.0
+kernel[18] = -0.4
+kernel[32] = 0.2
+
+trials = [simulate_trial(rng, n_samples=4_096, kernel=kernel, noise_scale=0.05) for _ in range(6)]
+stimulus = [trial_stimulus for trial_stimulus, _ in trials]
+response = [trial_response for _, trial_response in trials]
 
 model = TRF(direction=1)
 cv_scores = model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=stimulus[:-1],
+    response=response[:-1],
     fs=fs,
-    tmin=-0.050,
-    tmax=0.250,
-    regularization=np.logspace(-6, 1, 8),
-    segment_duration=2.048,
+    tmin=0.0,
+    tmax=kernel.shape[0] / fs,
+    regularization=np.logspace(-6, 0, 7),
+    segment_duration=1.0,
     overlap=0.5,
     window="hann",
     k="loo",
-    trial_weights=inverse_variance_weights(response),
+    trial_weights=inverse_variance_weights(response[:-1]),
 )
 
-prediction, score = model.predict(stimulus=stimulus, response=response)
+prediction = model.predict(stimulus=stimulus[-1])
+score = model.score(stimulus=stimulus[-1], response=response[-1])
 fig, ax = model.plot(input_index=0, output_index=0)
 ```
 
@@ -80,19 +99,25 @@ multi-trial example workflow:
 
 - `stimulus` and `response` are lists of arrays, so the fit runs in
   multi-trial mode.
+- `stimulus[:-1]` and `response[:-1]` are the training trials, while the last
+  trial is held out for evaluation.
 - `direction=1` means a forward model: stimulus features predict response
   channels.
-- `tmin=-0.050` and `tmax=0.250` request a lag window from -50 ms to +250 ms.
-- `regularization=np.logspace(-6, 1, 8)` asks the model to cross-validate over
-  eight ridge values instead of fitting one fixed value.
-- `segment_duration=2.048` sets the segment size used to estimate the
+- `tmin=0.0` and `tmax=kernel.shape[0] / fs` request a causal lag window that
+  matches the simulated ground-truth kernel.
+- `regularization=np.logspace(-6, 0, 7)` asks the model to cross-validate over
+  seven ridge values instead of fitting one fixed value.
+- `segment_duration=1.0` sets the segment size used to estimate the
   cross-spectra.
 - `overlap=0.5` reuses half of each segment in the next one, which can help
   stabilize estimates when segments are short.
 - `window="hann"` applies a Hann window before the FFT.
 - `k="loo"` means leave-one-out cross-validation over trials.
-- `trial_weights=inverse_variance_weights(response)` downweights noisier trials
-  in the aggregate training spectra.
+- `trial_weights=inverse_variance_weights(response[:-1])` downweights noisier
+  training trials in the aggregate spectra.
+- `prediction = model.predict(...)` returns the held-out prediction, and
+  `score = model.score(...)` evaluates that held-out trial with the estimator's
+  configured metric.
 
 ## What `train(...)` Returns
 
@@ -118,6 +143,8 @@ After training, the most important attributes are:
   `(predictions, score)`.
 - The default score is Pearson correlation, but you can choose a different
   metric when constructing the model.
+- `score(...)` always requires the observed target side and returns only the
+  metric.
 
 ## Input Conventions
 
@@ -161,6 +188,10 @@ setting.
   group delay
 - `model.cross_spectral_diagnostics(...)`: compare predicted and observed
   spectra
+- `model.permutation_test(...)`: compare a held-out score against surrogate
+  null scores
+- `model.refit_permutation_test(...)`: rerun the training pipeline on
+  surrogate-aligned training data for a stronger null
 - `model.bootstrap_confidence_interval(...)`: estimate uncertainty over trials
 - `model.save(...)`: persist the fitted model
 
@@ -175,6 +206,8 @@ setting.
 - Explore time-frequency views in [Frequency-Resolved Analysis](guides/frequency-resolved.md)
 - Explore spectral inspection tools in
   [Diagnostics and Transfer Functions](guides/diagnostics-and-transfer-functions.md)
+- Learn the held-out significance workflow in
+  [Significance Testing](guides/significance-testing.md)
 - Browse runnable scripts in [Examples](examples.md)
 - Open the rendered tutorial in
   [Getting Started Notebook](notebooks/getting-started.ipynb)

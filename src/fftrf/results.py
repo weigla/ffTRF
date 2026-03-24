@@ -56,6 +56,49 @@ CrossSpectralDiagnostics = TRFDiagnostics
 
 
 @dataclass(slots=True)
+class PermutationTestResult:
+    """Permutation-based significance test result for held-out prediction scores.
+
+    This container is returned by :meth:`fftrf.TRF.permutation_test` and keeps
+    the observed prediction score together with the surrogate null
+    distribution used to assess significance.
+
+    Attributes
+    ----------
+    observed_score:
+        Score computed on the original aligned evaluation data. This follows
+        the same scalar-vs-array contract as :meth:`fftrf.TRF.score`: a scalar
+        when scores are averaged and one value per output when
+        ``average=False``.
+    null_scores:
+        Aggregated surrogate scores from all permutations. Shape is
+        ``(n_permutations,)`` when the score is aggregated to one scalar and
+        ``(n_permutations, n_outputs)`` when ``average=False``.
+    p_value:
+        Permutation p-value(s) computed from :attr:`null_scores`.
+    z_score:
+        Standardized score relative to the null distribution mean and standard
+        deviation.
+    tail:
+        Tail convention used for the p-value calculation: ``"greater"``,
+        ``"less"``, or ``"two-sided"``.
+    surrogate:
+        Surrogate data strategy used to construct the null distribution, for
+        example ``"circular_shift"`` or ``"trial_shuffle"``.
+    n_permutations:
+        Number of surrogate scores stored in :attr:`null_scores`.
+    """
+
+    observed_score: np.ndarray | float
+    null_scores: np.ndarray
+    p_value: np.ndarray | float
+    z_score: np.ndarray | float
+    tail: str
+    surrogate: str
+    n_permutations: int
+
+
+@dataclass(slots=True)
 class TransferFunctionComponents:
     """Derived one-pair transfer-function quantities.
 

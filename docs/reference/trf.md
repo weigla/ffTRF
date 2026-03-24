@@ -24,6 +24,9 @@ used to pick the best regularization value during cross-validation. It does not
 change the actual fitting objective, which remains ridge-regularized
 frequency-domain TRF estimation.
 
+The same metric also defines the observed and surrogate scores returned by
+`permutation_test(...)` and `refit_permutation_test(...)`.
+
 ## Common Parameter Meanings
 
 These parameters appear repeatedly across the API:

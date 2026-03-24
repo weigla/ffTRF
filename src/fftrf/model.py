@@ -30,6 +30,7 @@ from .prediction import (
 from .results import (
     CrossSpectralDiagnostics,
     FrequencyResolvedWeights,
+    PermutationTestResult,
     TRFDiagnostics,
     TimeFrequencyPower,
     TransferFunctionComponents,
@@ -79,6 +80,7 @@ from .utils import (
 TRF.__module__ = __name__
 TRFDiagnostics.__module__ = __name__
 CrossSpectralDiagnostics.__module__ = __name__
+PermutationTestResult.__module__ = __name__
 FrequencyResolvedWeights.__module__ = __name__
 TimeFrequencyPower.__module__ = __name__
 TransferFunctionComponents.__module__ = __name__

@@ -89,6 +89,10 @@ Use:
 
 - `predict(...)` when you want the predicted signals
 - `score(...)` when you only want the metric
+- `permutation_test(...)` when you want a surrogate-null significance check
+  for a held-out score
+- `refit_permutation_test(...)` when you want the stronger retrain-and-score
+  null
 
 If you pass observed targets to `predict(...)`, it returns both predictions and
 the score.
@@ -107,7 +111,7 @@ The model can also be explored spectrally:
 These methods are especially useful when you care about gain, phase,
 coherence, or whether the model reproduces the observed output spectrum.
 
-## 7. Quantify Uncertainty
+## 7. Quantify Uncertainty and Significance
 
 If you have multiple trials, you can estimate a trial-bootstrap confidence
 interval:
@@ -117,6 +121,12 @@ interval:
 
 The stored interval can then be shown in kernel plots or extracted with
 `bootstrap_interval_at(...)`.
+
+If you want to know whether a held-out prediction score beats a surrogate null
+distribution, use `permutation_test(...)` on the evaluation data.
+
+If you want the null to include retraining and regularization selection, use
+`refit_permutation_test(...)` with explicit train/test splits.
 
 ## 8. Save or Copy the Model
 

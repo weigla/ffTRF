@@ -19,6 +19,8 @@ choose whichever name reads more naturally in their code.
 
 ::: fftrf.TRFDiagnostics
 
+::: fftrf.PermutationTestResult
+
 ::: fftrf.FrequencyResolvedWeights
 
 ::: fftrf.TimeFrequencyPower
