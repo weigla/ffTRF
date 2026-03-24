@@ -11,6 +11,7 @@ plugins:
   - search
   - mkdocs-jupyter:
       execute: true
+      allow_errors: false
       include:
         - "*.ipynb"
       include_source: true

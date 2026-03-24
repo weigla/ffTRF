@@ -64,8 +64,8 @@ pixi run -e compare python examples/example_mtrf_sample_eeg.py
 If you want a more tutorial-style presentation than the plain scripts, the docs
 site also renders lightweight notebooks:
 
-- [Getting Started Notebook](notebooks/getting-started.ipynb)
-- [Frequency-Resolved Notebook](notebooks/frequency-resolved.ipynb)
+- [Getting Started Notebook](../notebooks/getting-started/)
+- [Frequency-Resolved Notebook](../notebooks/frequency-resolved/)
 
 These notebooks mirror the same public API as the scripts while interleaving
 code, explanation, and representative plots.

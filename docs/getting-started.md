@@ -94,13 +94,16 @@ cv_scores = model.train(
 
 prediction = model.predict(stimulus=stimulus[-1])
 score = model.score(stimulus=stimulus[-1], response=response[-1])
-fig, ax = model.plot(input_index=0, output_index=0)
+fig, ax = model.plot(
+    input_index=0,
+    output_index=0,
+    title="Recovered kernel from the held-out example",
+)
 ```
 
-The kind of lag-domain kernel this produces is shown below for the bundled
-multi-trial example workflow:
+The plot below is generated from the exact seeded example above:
 
-![Multi-trial kernel example](images/examples/multi_trial_single_channel.png)
+![Getting started example output](images/examples/getting_started_first_model.png)
 
 ## What This Example Is Doing
 
@@ -217,4 +220,4 @@ setting.
   [Significance Testing](guides/significance-testing.md)
 - Browse runnable scripts in [Examples](examples.md)
 - Open the rendered tutorial in
-  [Getting Started Notebook](notebooks/getting-started.ipynb)
+  [Getting Started Notebook](../notebooks/getting-started/)

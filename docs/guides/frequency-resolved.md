@@ -10,7 +10,7 @@ fitted spectrum.
 ```python
 resolved = model.frequency_resolved_weights(
     n_bands=18,
-    fmax=160.0,
+    fmax=min(100.0, float(model.frequencies[-1])),
     value_mode="real",
 )
 
@@ -31,7 +31,8 @@ Example output from the bundled frequency-resolved workflow:
 ## What the Parameters Mean
 
 - `n_bands`: number of analysis bands
-- `fmin`, `fmax`: frequency range to resolve
+- `fmin`, `fmax`: frequency range to resolve; `fmax` must stay at or below the
+  fitted Nyquist frequency (`fs / 2`)
 - `scale`: `"linear"` or `"log"` spacing of band centers
 - `bandwidth`: width of the Gaussian analysis bands
 - `value_mode`: how the band-limited kernels are represented
@@ -92,4 +93,4 @@ The estimator also exposes direct frequency-domain views:
 - `plot_cross_spectrum(...)`
 
 If you want the same workflow in a more tutorial-like format, see the rendered
-[Frequency-Resolved Notebook](../notebooks/frequency-resolved.ipynb).
+[Frequency-Resolved Notebook](../../notebooks/frequency-resolved/).
