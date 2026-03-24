@@ -19,7 +19,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      MPLBACKEND: Agg
       MPLCONFIGDIR: /tmp/matplotlib
     steps:
       - name: Check out repository
