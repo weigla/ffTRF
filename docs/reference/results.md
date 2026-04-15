@@ -21,6 +21,8 @@ choose whichever name reads more naturally in their code.
 
 ::: fftrf.PermutationTestResult
 
+::: fftrf.BayesianTRFResult
+
 ::: fftrf.FrequencyResolvedWeights
 
 ::: fftrf.TimeFrequencyPower

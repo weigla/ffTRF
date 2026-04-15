@@ -2,7 +2,9 @@
 
 `ffTRF` is a Python toolbox for fitting temporal response functions in the
 frequency domain. It is designed for continuous stimulus-response modeling with
-a small public API centered on `fftrf.TRF`.
+a small public API centered on `fftrf.TRF`, plus an experimental
+`fftrf.BayesianTRF` estimator for evidence-based posterior fitting with
+credible intervals.
 
 The full documentation is hosted at
 [weigla.github.io/ffTRF](https://weigla.github.io/ffTRF/), with dedicated pages
@@ -197,6 +199,36 @@ fig, ax = model.plot(input_index=0, output_index=0)
 This example uses a known simulated kernel and keeps the last trial held out,
 so `score` is a real generalization check rather than a training-set-only
 sanity check.
+
+## Bayesian Example
+
+The experimental Bayesian estimator follows the same overall workflow while
+storing posterior uncertainty:
+
+```python
+from fftrf import BayesianTRF
+
+bayes = BayesianTRF(direction=1)
+bayes.train(
+    stimulus=stimulus[:-1],
+    response=response[:-1],
+    fs=fs,
+    tmin=0.0,
+    tmax=kernel.shape[0] / fs,
+    prior="smooth",
+    segment_duration=1.0,
+    overlap=0.5,
+    window="hann",
+)
+
+prediction, score = bayes.predict(stimulus=stimulus[-1], response=response[-1])
+credible_interval, times = bayes.credible_interval_at(0.95)
+fig, ax = bayes.plot(input_index=0, output_index=0)
+```
+
+`BayesianTRF` also keeps compatibility aliases for the older
+`BayesianFrequencyTRF`, `fit_bayesian_frequency_trf(...)`, and
+`predict_bayesian_frequency_trf(...)` naming.
 
 ## Examples
 

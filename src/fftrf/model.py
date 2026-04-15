@@ -3,6 +3,15 @@
 
 from __future__ import annotations
 
+from .bayesian import (
+    BayesianFrequencyTRF,
+    BayesianTRF,
+    BayesianTRFResult,
+    fit_bayesian_frequency_trf,
+    fit_bayesian_trf,
+    predict_bayesian_frequency_trf,
+    predict_bayesian_trf,
+)
 from .estimator import (
     TRF,
     RegularizationSpec,
@@ -78,6 +87,13 @@ from .utils import (
 )
 
 TRF.__module__ = __name__
+BayesianTRF.__module__ = __name__
+BayesianTRFResult.__module__ = __name__
+fit_bayesian_trf.__module__ = __name__
+predict_bayesian_trf.__module__ = __name__
+BayesianFrequencyTRF.__module__ = __name__
+fit_bayesian_frequency_trf.__module__ = __name__
+predict_bayesian_frequency_trf.__module__ = __name__
 TRFDiagnostics.__module__ = __name__
 CrossSpectralDiagnostics.__module__ = __name__
 PermutationTestResult.__module__ = __name__

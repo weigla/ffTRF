@@ -20,9 +20,12 @@ surface.
 
 - `TRF`: train, predict, score, run score-level or refit-based significance
   tests, inspect, plot, diagnose, save, and load models
+- `BayesianTRF`: experimental Bayesian estimator with posterior uncertainty,
+  evidence updates, and credible intervals
 - `TRFDiagnostics` / `CrossSpectralDiagnostics`: observed-vs-predicted spectral
   diagnostics
 - `PermutationTestResult`: held-out score significance against surrogate nulls
+- `BayesianTRFResult`: posterior summary returned by `BayesianTRF.result()`
 - `FrequencyResolvedWeights`: frequency-by-lag decomposition of the kernel
 - `TimeFrequencyPower`: spectrogram-like power view of the kernel
 - `TransferFunctionComponents`: magnitude, phase, and group delay for one
@@ -32,3 +35,5 @@ surface.
   defaults for the standard estimator
 - `half_wave_rectify`, `resample_signal`, `inverse_variance_weights`: small
   preprocessing utilities
+- `fftrf.experimental`: compatibility namespace that re-exports the Bayesian
+  experimental API

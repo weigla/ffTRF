@@ -1,3 +1,12 @@
+from .bayesian import (
+    BayesianFrequencyTRF,
+    BayesianTRF,
+    BayesianTRFResult,
+    fit_bayesian_frequency_trf,
+    fit_bayesian_trf,
+    predict_bayesian_frequency_trf,
+    predict_bayesian_trf,
+)
 from .model import (
     CrossSpectralDiagnostics,
     FrequencyResolvedWeights,
@@ -16,6 +25,9 @@ from .preprocessing import half_wave_rectify, inverse_variance_weights, resample
 from .utils import suggest_segment_settings
 
 __all__ = [
+    "BayesianFrequencyTRF",
+    "BayesianTRF",
+    "BayesianTRFResult",
     "CrossSpectralDiagnostics",
     "FrequencyResolvedWeights",
     "PermutationTestResult",
@@ -25,10 +37,14 @@ __all__ = [
     "TransferFunctionComponents",
     "available_metrics",
     "explained_variance_score",
+    "fit_bayesian_frequency_trf",
+    "fit_bayesian_trf",
     "half_wave_rectify",
     "inverse_variance_weights",
     "neg_mse",
     "pearsonr",
+    "predict_bayesian_frequency_trf",
+    "predict_bayesian_trf",
     "r2_score",
     "resample_signal",
     "suggest_segment_settings",

@@ -1,8 +1,10 @@
 # TRF Estimator
 
-`fftrf.TRF` is the main public API of the toolbox. This page explains the
-shared semantics of its parameters and attributes before showing the generated
-function-by-function reference.
+`fftrf.TRF` is the main public API of the toolbox. `fftrf.BayesianTRF` mirrors
+the same high-level workflow for training, prediction, scoring, and plotting,
+but adds posterior uncertainty, evidence-based hyperparameter updates, and
+credible intervals. This page explains the shared semantics before showing the
+generated reference for both estimators.
 
 ## Constructor
 
@@ -26,6 +28,14 @@ frequency-domain TRF estimation.
 
 The same metric also defines the observed and surrogate scores returned by
 `permutation_test(...)` and `refit_permutation_test(...)`.
+
+`BayesianTRF` uses the same prediction metric contract. Its additional
+Bayesian-specific parameters include:
+
+- `prior`: `"ridge"`, `"smooth"`, `"decay_ridge"`, or `"ard"`
+- `credible_level`: posterior mass used for stored intervals
+- `alpha_init`, `beta_init`, `max_iter`, `tol`: evidence-update settings
+- `decay_tau`: optional time constant for the `"decay_ridge"` prior
 
 ## Common Parameter Meanings
 
@@ -81,3 +91,5 @@ arguments, return values, and stored attributes. Use the guides for conceptual
 advice and the reference for exact behavior.
 
 ::: fftrf.TRF
+
+::: fftrf.BayesianTRF

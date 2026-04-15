@@ -3,10 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import fftrf
+import fftrf.experimental as experimental_api
 import numpy as np
 import pytest
 
-from fftrf import PermutationTestResult, TRF
+from fftrf import BayesianTRF, BayesianTRFResult, PermutationTestResult, TRF
 
 
 def _simulate_trials(
@@ -341,3 +342,9 @@ def test_refit_permutation_test_requires_fit_configuration() -> None:
 
 def test_top_level_api_exports_permutation_result() -> None:
     assert fftrf.PermutationTestResult is PermutationTestResult
+
+
+def test_top_level_api_exports_bayesian_objects() -> None:
+    assert fftrf.BayesianTRF is BayesianTRF
+    assert fftrf.BayesianTRFResult is BayesianTRFResult
+    assert experimental_api.BayesianTRF is BayesianTRF
