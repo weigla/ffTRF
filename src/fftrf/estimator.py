@@ -2439,9 +2439,8 @@ class TRF:
                         tmin=float(tmin),
                         tmax=float(tmax),
                         metric=self.metric,
+                        progress_callback=None if progress_bar is None else progress_bar.update,
                     )
-                    if progress_bar is not None:
-                        progress_bar.update(len(feature_regularization_values))
             else:
                 with ThreadPoolExecutor(max_workers=resolved_n_jobs) as executor:
                     futures = {
@@ -2457,14 +2456,13 @@ class TRF:
                             tmin=float(tmin),
                             tmax=float(tmax),
                             metric=self.metric,
+                            progress_callback=None if progress_bar is None else progress_bar.update,
                         ): fold_index
                         for fold_index, ((cxx, cxy), val_predictors, val_targets) in enumerate(fold_inputs)
                     }
                     for future in as_completed(futures):
                         fold_index = futures[future]
                         per_reg_scores[:, fold_index, :] = future.result()
-                        if progress_bar is not None:
-                            progress_bar.update(len(feature_regularization_values))
         finally:
             if progress_bar is not None:
                 progress_bar.close()

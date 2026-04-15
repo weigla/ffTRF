@@ -316,9 +316,6 @@ class _SimpleProgressBar:
             if self.use_carriage:
                 self.stream.write("\n")
                 self.stream.flush()
-            elif self.current < self.total:
-                self.current = self.total
-                self._emit()
 
     def _emit(self) -> None:
         fraction = self.current / self.total
@@ -328,8 +325,7 @@ class _SimpleProgressBar:
         if self.use_carriage:
             self.stream.write(f"\r{self.label} {bar}")
         else:
-            if self.current == 0 or self.current == self.total:
-                self.stream.write(f"{self.label} {bar}\n")
+            self.stream.write(f"{self.label} {bar}\n")
         self.stream.flush()
 
 

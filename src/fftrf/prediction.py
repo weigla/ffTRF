@@ -502,6 +502,7 @@ def _score_regularization_grid_for_fold(
     tmin: float,
     tmax: float,
     metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    progress_callback: Callable[[int], None] | None = None,
 ) -> np.ndarray:
     scores = np.zeros(
         (len(feature_regularization_values), val_targets[0].shape[1]),
@@ -545,4 +546,6 @@ def _score_regularization_grid_for_fold(
             val_targets,
             predictions,
         )
+        if progress_callback is not None:
+            progress_callback(1)
     return scores

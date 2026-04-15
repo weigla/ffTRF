@@ -776,10 +776,12 @@ def test_cv_progress_indicator_emits_output(capsys: pytest.CaptureFixture[str]) 
         segment_duration=0.512,
         k=3,
         show_progress=True,
+        n_jobs=2,
     )
 
     captured = capsys.readouterr()
     assert "Cross-validating" in captured.err
+    assert "1/15" in captured.err
     assert "15/15" in captured.err
 
 
