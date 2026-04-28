@@ -62,6 +62,7 @@ from .utils import (
     _resolve_raw_trial_weights,
     _resolve_regularization_candidates,
     _resolve_segment_length,
+    _single_candidate_cv_requested,
     _validate_bands,
     _warn_if_cv_arguments_are_unused,
 )
@@ -311,8 +312,11 @@ class TRF:
         detrend:
             Optional detrending passed to :func:`scipy.signal.detrend`.
         k:
-            Number of cross-validation folds when multiple regularization values
-            are supplied. ``-1`` or ``"loo"`` means leave-one-out over trials.
+            Number of cross-validation folds. ``-1`` or ``"loo"`` means
+            leave-one-out over trials. With a single regularization candidate,
+            the direct-fit shortcut remains the default, but setting ``k``
+            explicitly to a value such as ``5`` or ``"loo"`` requests
+            cross-validation for that fixed ridge value as well.
         average:
             How cross-validation scores should be reduced across output
             channels/features. ``True`` returns a single score per regularization
@@ -342,28 +346,28 @@ class TRF:
         Returns
         -------
         None or numpy.ndarray
-            ``None`` when a single regularization value is fitted directly.
-            Otherwise returns cross-validation scores for each candidate
-            regularization setting in the order stored by
+            ``None`` when a single regularization value is fitted through the
+            default direct-fit path. Otherwise returns cross-validation scores
+            for each evaluated regularization setting in the order stored by
             :attr:`regularization_candidates`.
 
         Notes
         -----
         The fitted model is always stored on the instance, even when
         cross-validation is used. In that case the final fit uses the selected
-        regularization value and all provided trials. When multiple
-        regularization values are supplied, the per-trial spectra are cached so
-        the FFT work is performed only once. Direct single-lambda fits use a
-        lower-memory aggregated-spectra path automatically because no trialwise
-        cache is needed. Banded regularization is entirely opt-in through
-        ``bands``; leaving it unset preserves the default "mTRF in Fourier
-        space" workflow.
+        regularization value and all provided trials. When cross-validation is
+        requested, the per-trial spectra are cached so the FFT work is
+        performed only once. Direct single-lambda fits use a lower-memory
+        aggregated-spectra path automatically when that cache is unnecessary.
+        Banded regularization is entirely opt-in through ``bands``; leaving it
+        unset preserves the default "mTRF in Fourier space" workflow.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
         response_trials, _ = _coerce_trials(response, "response")
         _check_trial_lengths(stimulus_trials, response_trials)
 
+        raw_k = k
         segment_length = _resolve_segment_length(
             fs=fs,
             segment_length=segment_length,
@@ -397,13 +401,18 @@ class TRF:
             n_inputs=x_trials[0].shape[1],
             bands=resolved_bands,
         )
-        _warn_if_cv_arguments_are_unused(
-            n_candidates=len(feature_regularization_values),
-            k=k,
-            average=average,
-            seed=seed,
-            show_progress=show_progress,
+        run_single_candidate_cv = (
+            len(feature_regularization_values) == 1
+            and _single_candidate_cv_requested(raw_k)
         )
+        if len(feature_regularization_values) == 1 and not run_single_candidate_cv:
+            _warn_if_cv_arguments_are_unused(
+                n_candidates=len(feature_regularization_values),
+                k=k,
+                average=average,
+                seed=seed,
+                show_progress=show_progress,
+            )
         raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
         self.trial_weights = _copy_value(trial_weights)
         self.bands = resolved_bands
@@ -437,7 +446,11 @@ class TRF:
             "bootstrap_seed": bootstrap_seed,
         }
 
-        needs_cache = len(feature_regularization_values) > 1 or int(bootstrap_samples) > 0
+        needs_cache = (
+            len(feature_regularization_values) > 1
+            or run_single_candidate_cv
+            or int(bootstrap_samples) > 0
+        )
         spectral_cache = None
         if needs_cache:
             spectral_cache = _build_spectral_cache(
@@ -453,7 +466,7 @@ class TRF:
                 detrend=detrend,
             )
 
-        if len(feature_regularization_values) == 1:
+        if len(feature_regularization_values) == 1 and not run_single_candidate_cv:
             if spectral_cache is None:
                 self._fit(
                     x_trials,
@@ -501,6 +514,58 @@ class TRF:
                     self.bootstrap_level = float(bootstrap_level)
                     self.bootstrap_samples = int(bootstrap_samples)
             return None
+
+        if len(feature_regularization_values) == 1:
+            assert spectral_cache is not None
+            cv_scores = self._cross_validate(
+                x_trials,
+                y_trials,
+                fs=fs,
+                tmin=tmin,
+                tmax=tmax,
+                feature_regularization_values=feature_regularization_values,
+                segment_length=segment_length,
+                overlap=overlap,
+                n_fft=n_fft,
+                spectral_method=spectral_method,
+                time_bandwidth=time_bandwidth,
+                n_tapers=n_tapers,
+                window=window,
+                detrend=detrend,
+                k=k,
+                seed=seed,
+                average=average,
+                show_progress=show_progress,
+                n_jobs=n_jobs,
+                raw_trial_weights=raw_trial_weights,
+                spectral_cache=spectral_cache,
+            )
+            self._fit_from_cache(
+                spectral_cache,
+                fs=fs,
+                tmin=tmin,
+                tmax=tmax,
+                regularization=regularization_specs[0],
+                feature_regularization=feature_regularization_values[0],
+                bands=resolved_bands,
+                raw_trial_weights=raw_trial_weights,
+            )
+            if bootstrap_samples > 0:
+                self.bootstrap_interval, _ = _compute_bootstrap_interval_from_cache(
+                    spectral_cache,
+                    fs=fs,
+                    tmin=tmin,
+                    tmax=tmax,
+                    feature_regularization=feature_regularization_values[0],
+                    raw_trial_weights=raw_trial_weights,
+                    n_bootstraps=int(bootstrap_samples),
+                    level=float(bootstrap_level),
+                    seed=bootstrap_seed,
+                    n_jobs=n_jobs,
+                )
+                self.bootstrap_level = float(bootstrap_level)
+                self.bootstrap_samples = int(bootstrap_samples)
+            return cv_scores
 
         cv_scores = self._cross_validate(
             x_trials,
@@ -623,9 +688,9 @@ class TRF:
         Returns
         -------
         None or numpy.ndarray
-            Same return contract as :meth:`train`: ``None`` for a direct fit or
-            cross-validation scores when multiple regularization candidates are
-            evaluated.
+            Same return contract as :meth:`train`: ``None`` for the default
+            direct-fit path or cross-validation scores whenever validation is
+            requested.
 
         Notes
         -----

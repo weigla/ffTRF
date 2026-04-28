@@ -263,6 +263,12 @@ def _resolve_n_jobs(n_jobs: int | None) -> int:
     return resolved
 
 
+def _single_candidate_cv_requested(k: int | str) -> bool:
+    if isinstance(k, str):
+        return True
+    return int(k) != -1
+
+
 def _warn_if_cv_arguments_are_unused(
     *,
     n_candidates: int,
@@ -275,8 +281,6 @@ def _warn_if_cv_arguments_are_unused(
         return
 
     unused: list[str] = []
-    if isinstance(k, str) or int(k) != -1:
-        unused.append("k")
     if average is not True:
         unused.append("average")
     if seed is not None:
@@ -288,7 +292,8 @@ def _warn_if_cv_arguments_are_unused(
         formatted = ", ".join(unused)
         warnings.warn(
             f"{formatted} {'is' if len(unused) == 1 else 'are'} ignored because "
-            "cross-validation requires more than one regularization candidate.",
+            "single-candidate fits use direct training unless cross-validation "
+            "is requested with k.",
             UserWarning,
             stacklevel=2,
         )

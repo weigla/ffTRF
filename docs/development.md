@@ -21,6 +21,14 @@ pixi run -e compare compare-demo
 pixi run -e compare benchmark-demo
 ```
 
+For API behavior changes, the usual check is:
+
+1. `pixi run -e test test`
+2. `pixi run -e docs docs-build`
+
+That combination catches both regression failures and documentation drift in
+the generated reference pages.
+
 ## Editable Install Without Pixi
 
 ```bash

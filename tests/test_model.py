@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 from typing import Sequence
+import warnings
 
 import fftrf
 import fftrf.estimator as estimator_module
@@ -720,7 +721,7 @@ def test_k_accepts_loo_alias() -> None:
     assert scores.shape == (5,)
 
 
-def test_single_lambda_warns_about_unused_cv_arguments() -> None:
+def test_single_lambda_returns_none_without_explicit_cv_request() -> None:
     rng = np.random.default_rng(32)
     fs = 1_000
     kernel = np.zeros(20)
@@ -736,8 +737,39 @@ def test_single_lambda_warns_about_unused_cv_arguments() -> None:
     )
 
     model = TRF(direction=1)
-    with pytest.warns(UserWarning, match="ignored because cross-validation requires more than one regularization candidate"):
-        model.train(
+    result = model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.020,
+        regularization=1e-3,
+        segment_duration=0.512,
+    )
+    assert result is None
+
+
+def test_single_lambda_warns_when_non_k_cv_arguments_are_ignored() -> None:
+    rng = np.random.default_rng(320)
+    fs = 1_000
+    kernel = np.zeros(20)
+    kernel[2] = 0.8
+    kernel[6] = -0.2
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=4,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    model = TRF(direction=1)
+    with pytest.warns(
+        UserWarning,
+        match="average, seed, show_progress are ignored because single-candidate fits use direct training unless cross-validation is requested with k",
+    ):
+        result = model.train(
             stimulus=stimulus,
             response=response,
             fs=fs,
@@ -745,9 +777,63 @@ def test_single_lambda_warns_about_unused_cv_arguments() -> None:
             tmax=0.020,
             regularization=1e-3,
             segment_duration=0.512,
-            k=4,
+            average=False,
+            seed=7,
             show_progress=True,
         )
+    assert result is None
+
+
+def test_single_lambda_cross_validation_matches_single_candidate_grid() -> None:
+    rng = np.random.default_rng(321)
+    fs = 1_000
+    kernel = np.zeros(24)
+    kernel[3] = 0.8
+    kernel[9] = -0.22
+
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=6,
+        n_samples=2_048,
+        kernel=kernel,
+        noise_scale=0.04,
+    )
+
+    scalar_model = TRF(direction=1)
+    with warnings.catch_warnings(record=True) as scalar_warnings:
+        scalar_scores = scalar_model.train(
+            stimulus=stimulus,
+            response=response,
+            fs=fs,
+            tmin=0.0,
+            tmax=0.024,
+            regularization=1e-3,
+            segment_duration=0.512,
+            k=4,
+            show_progress=True,
+            n_jobs=2,
+        )
+    assert len(scalar_warnings) == 0
+
+    grid_model = TRF(direction=1)
+    grid_scores = grid_model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.024,
+        regularization=[1e-3],
+        segment_duration=0.512,
+        k=4,
+        show_progress=True,
+        n_jobs=2,
+    )
+
+    assert np.asarray(scalar_scores).shape == (1,)
+    assert np.allclose(scalar_scores, grid_scores, rtol=1e-10, atol=1e-12)
+    assert scalar_model.regularization == pytest.approx(1e-3)
+    assert grid_model.regularization == pytest.approx(1e-3)
+    assert np.allclose(scalar_model.weights, grid_model.weights, rtol=1e-10, atol=1e-12)
 
 
 def test_cv_progress_indicator_emits_output(capsys: pytest.CaptureFixture[str]) -> None:

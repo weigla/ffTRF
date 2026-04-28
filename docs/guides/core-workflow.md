@@ -43,6 +43,21 @@ model.train(
 )
 ```
 
+If you want to validate that same fixed ridge value, keep the scalar
+regularization and set `k` explicitly:
+
+```python
+scores = model.train(
+    stimulus=stimulus,
+    response=response,
+    fs=fs,
+    tmin=0.0,
+    tmax=0.150,
+    regularization=1e-3,
+    k=5,
+)
+```
+
 Use cross-validation when you want the model to select a ridge value:
 
 ```python

@@ -70,6 +70,7 @@ from .utils import (
     _resolve_regularization_candidates,
     _resolve_segment_length,
     _resolve_phase_unit,
+    _single_candidate_cv_requested,
     _smallest_positive_frequency,
     suggest_segment_settings,
     _validate_average_arg,

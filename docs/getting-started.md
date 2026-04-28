@@ -131,8 +131,11 @@ The plot below is generated from the exact seeded example above:
 
 ## What `train(...)` Returns
 
-- If `regularization` is a single scalar, `train(...)` returns `None` and fits
-  directly.
+- If `regularization` is a single scalar and you do not explicitly request
+  cross-validation, `train(...)` returns `None` and fits directly.
+- If `regularization` is a single scalar and you set `k` explicitly, `train(...)`
+  returns a one-entry cross-validation score array for that evaluated
+  candidate and then refits on all supplied trials with the same ridge value.
 - If `regularization` contains multiple candidates, `train(...)` returns the
   cross-validation scores for those candidates.
 - Regardless of return value, the fitted state is stored on the estimator.

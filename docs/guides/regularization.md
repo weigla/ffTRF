@@ -24,8 +24,27 @@ Use this when:
 - you want the fastest possible fit
 - you are running a reproducible pipeline with fixed hyperparameters
 
-In this mode, `train(...)` returns `None` because no candidate grid is
-evaluated.
+In this mode, `train(...)` returns `None` because no validation run is
+requested.
+
+If you want to score that fixed ridge value with cross-validation before the
+final refit, keep the scalar `regularization` and set `k` explicitly:
+
+```python
+scores = model.train(
+    stimulus=stimulus,
+    response=response,
+    fs=fs,
+    tmin=0.0,
+    tmax=0.120,
+    regularization=1e-3,
+    k=5,
+)
+```
+
+This returns a one-entry cross-validation score array for the single evaluated
+candidate and then refits the final model on all supplied trials using that same ridge
+value.
 
 ## Cross-Validated Search
 

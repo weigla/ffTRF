@@ -76,7 +76,8 @@ When reading the examples, pay attention to:
 
 - how single arrays differ from lists of trials
 - how `direction` changes which side is treated as predictor vs target
-- when `train(...)` returns `None` versus cross-validation scores
+- when `train(...)` returns `None` versus cross-validation scores, including
+  fixed-ridge validation with an explicit `k`
 - how the same fitted model can be inspected with lag-domain plots,
   frequency-domain diagnostics, and bootstrap intervals
 
