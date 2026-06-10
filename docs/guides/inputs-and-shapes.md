@@ -44,6 +44,11 @@ The meaning of `stimulus` and `response` depends on `direction`:
 - `direction=1`: predictor is stimulus, target is response
 - `direction=-1`: predictor is response, target is stimulus
 
+Backward models follow mTRF's lag convention as well as its predictor/target
+convention: the lag samples requested through `train(..., tmin, tmax)` are
+reversed internally. For example, a requested `[0, 0.4)` second window becomes
+an approximately `[-0.4, 0]` second decoder window in `model.times`.
+
 This applies consistently across:
 
 - `train(...)`

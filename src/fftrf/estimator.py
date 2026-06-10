@@ -71,6 +71,27 @@ _USE_STORED_TRIAL_WEIGHTS = object()
 RegularizationSpec = float | tuple[float, ...]
 
 
+def _resolve_directional_lag_window(
+    *,
+    direction: int,
+    fs: float,
+    tmin: float,
+    tmax: float,
+) -> tuple[float, float]:
+    """Return the physical lag window used by the fitted predictor-target map."""
+
+    if direction == 1:
+        return float(tmin), float(tmax)
+    if direction != -1:
+        raise ValueError("direction must be 1 (forward) or -1 (backward).")
+
+    lag_start = int(round(float(tmin) * float(fs)))
+    lag_stop = int(round(float(tmax) * float(fs)))
+    reversed_start = 1 - lag_stop
+    reversed_stop = 1 - lag_start
+    return reversed_start / float(fs), reversed_stop / float(fs)
+
+
 class TRF:
     """
     Estimate stimulus-response mappings in the frequency domain.
@@ -108,7 +129,10 @@ class TRF:
     direction:
         Modeling direction. Use ``1`` for a forward model
         (stimulus -> neural response) and ``-1`` for a backward model
-        (neural response -> stimulus).
+        (neural response -> stimulus). As in ``mTRF``, backward fitting also
+        reverses the requested lag samples. For example, ``tmin=0`` and
+        ``tmax=0.4`` produce decoder weights at approximately ``-0.4`` to
+        ``0`` seconds.
     metric:
         Callable or built-in metric name used to score predictions. It must
         accept ``(y_true, y_pred)`` and return one score per output column.
@@ -259,7 +283,10 @@ class TRF:
             Sampling rate in Hz shared by stimulus and response.
         tmin, tmax:
             Time window, in seconds, that should be extracted from the learned
-            transfer function as a time-domain kernel.
+            transfer function as a time-domain kernel. The interval is
+            half-open, ``[tmin, tmax)``. For backward models, the requested
+            sample lags are internally reversed to match ``mTRF`` semantics;
+            :attr:`times` contains the resulting physical decoder lags.
         regularization:
             Regularization specification. The default behavior matches a
             standard ridge TRF fit:
@@ -390,6 +417,14 @@ class TRF:
             window,
             detrend,
         )
+        requested_tmin = float(tmin)
+        requested_tmax = float(tmax)
+        tmin, tmax = _resolve_directional_lag_window(
+            direction=self.direction,
+            fs=float(fs),
+            tmin=requested_tmin,
+            tmax=requested_tmax,
+        )
         if int(bootstrap_samples) < 0:
             raise ValueError("bootstrap_samples must be non-negative.")
         _validate_confidence_level(bootstrap_level, name="bootstrap_level")
@@ -422,8 +457,8 @@ class TRF:
         self.bootstrap_samples = None
         self._fit_config = {
             "fs": float(fs),
-            "tmin": float(tmin),
-            "tmax": float(tmax),
+            "tmin": requested_tmin,
+            "tmax": requested_tmax,
             "regularization": _copy_value(regularization),
             "bands": None if resolved_bands is None else tuple(resolved_bands),
             "segment_length": None if segment_length is None else int(segment_length),

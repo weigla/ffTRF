@@ -31,6 +31,9 @@ plotting.
   trials may have different lengths.
 - `TRF(direction=1)` uses stimulus as predictor and response as target.
 - `TRF(direction=-1)` uses response as predictor and stimulus as target.
+- As in mTRF, backward training reverses the requested discrete lag samples.
+  A user-facing `[0, tmax)` request therefore produces physical decoder lags
+  ending at zero; `model.times` stores those reversed lags.
 - Stored lag-domain weights have shape
   `(n_inputs, n_lags, n_outputs)`.
 - The lag interval is sample based and follows `[tmin, tmax)`.

@@ -1175,6 +1175,92 @@ def test_frequency_trf_matches_time_domain_ridge_lambda_scale() -> None:
     assert 0.7 < (np.linalg.norm(recovered) / np.linalg.norm(reference)) < 1.3
 
 
+def test_backward_direction_reverses_requested_lag_samples() -> None:
+    rng = np.random.default_rng(110)
+    fs = 100.0
+    n_samples = 512
+    stimulus = rng.standard_normal((n_samples, 1))
+    response = rng.standard_normal((n_samples, 2))
+
+    model = TRF(direction=-1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=-0.02,
+        tmax=0.04,
+        regularization=1.0,
+        window=None,
+        detrend=None,
+    )
+
+    assert np.allclose(model.times, np.arange(-3, 3) / fs)
+    assert model.tmin == pytest.approx(-0.03)
+    assert model.tmax == pytest.approx(0.03)
+    assert model._fit_config["tmin"] == pytest.approx(-0.02)
+    assert model._fit_config["tmax"] == pytest.approx(0.04)
+
+
+def test_backward_frequency_trf_matches_negative_lag_ridge_reference() -> None:
+    rng = np.random.default_rng(111)
+    fs = 500.0
+    n_samples = 4_096
+    n_lags = 30
+
+    stimulus = rng.standard_normal(n_samples)
+    kernel_0 = np.zeros(n_lags)
+    kernel_0[4] = 1.0
+    kernel_0[11] = -0.3
+    kernel_1 = np.zeros(n_lags)
+    kernel_1[7] = 0.7
+    kernel_1[18] = 0.2
+    response = np.column_stack(
+        [
+            np.convolve(stimulus, kernel_0, mode="full")[:n_samples],
+            np.convolve(stimulus, kernel_1, mode="full")[:n_samples],
+        ]
+    )
+    response += 0.05 * rng.standard_normal(response.shape)
+
+    lags = np.arange(-(n_lags - 1), 1, dtype=int)
+    design = np.zeros((n_samples, response.shape[1] * n_lags))
+    for feature_index in range(response.shape[1]):
+        for lag_index, lag in enumerate(lags):
+            column = feature_index * n_lags + lag_index
+            if lag < 0:
+                design[: n_samples + lag, column] = response[-lag:, feature_index]
+            elif lag > 0:
+                design[lag:, column] = response[: n_samples - lag, feature_index]
+            else:
+                design[:, column] = response[:, feature_index]
+
+    regularization = 1_000.0
+    reference = np.linalg.solve(
+        design.T @ design + regularization * np.eye(design.shape[1]),
+        design.T @ stimulus,
+    ).reshape(response.shape[1], n_lags, 1)
+
+    model = TRF(direction=-1)
+    model.train(
+        stimulus=stimulus[:, np.newaxis],
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=n_lags / fs,
+        regularization=regularization,
+        window=None,
+        detrend=None,
+    )
+
+    expected_times = lags / fs
+    prediction = model.predict(response=response)
+
+    assert np.allclose(model.times, expected_times)
+    assert np.corrcoef(reference.ravel(), model.weights.ravel())[0, 1] > 0.98
+    assert 0.7 < (np.linalg.norm(model.weights) / np.linalg.norm(reference)) < 1.3
+    assert np.corrcoef(design @ reference.ravel(), prediction[:, 0])[0, 1] > 0.99
+
+
 def test_multichannel_prediction_and_helpers() -> None:
     rng = np.random.default_rng(11)
     fs = 500

@@ -34,7 +34,10 @@ These parameters appear repeatedly across the API:
 - `stimulus`, `response`: one trial as a NumPy array or multiple trials as a
   list of arrays
 - `fs`: sampling rate in Hz used to interpret lags and frequency bins
-- `tmin`, `tmax`: lag window in seconds for extracting the time-domain kernel
+- `tmin`, `tmax`: half-open lag window in seconds for extracting the
+  time-domain kernel. With `direction=-1`, ffTRF reverses the requested lag
+  samples like mTRF, so a request from `0` to `400 ms` produces decoder lags
+  running from approximately `-400 ms` to `0`.
 - `regularization`: ridge value or candidate grid; can also describe banded
   regularization
 - `bands`: contiguous feature-group sizes for grouped ridge penalties

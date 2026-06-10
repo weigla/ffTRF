@@ -169,7 +169,10 @@ After training, the most important attributes are:
 - All stimulus/response pairs within one fit must have matching sample counts
   per trial.
 - In a backward model (`direction=-1`), the predictor side is the response and
-  the target side is the stimulus, but the same shape rules apply.
+  the target side is the stimulus, but the same shape rules apply. Backward
+  fits also follow mTRF's lag convention: requesting positive lags reverses
+  them internally, and `model.times` contains the resulting negative-to-zero
+  decoder lag axis.
 
 ## A Minimal Direct Fit
 

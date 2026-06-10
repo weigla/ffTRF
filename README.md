@@ -36,20 +36,20 @@ mTRF 2.1:
 
 | Scenario | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2880 | 0.2420 | 0.84x | 103.5 | 539.5 | 0.9990 | 0.9990 |
-| Longer lag window (`600` lags) | 0.1438 | 0.3356 | 2.33x | 99.9 | 542.5 | 0.9989 | 0.9989 |
-| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1631 | 1.1293 | 6.92x | 108.3 | 367.7 | 0.9989 | 0.9990 |
-| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0242 | 0.2890 | 11.96x | 99.7 | 539.8 | 0.9989 | 0.9990 |
-| EEG-scale forward model (`16 -> 102`) | 0.0547 | 0.0736 | 1.35x | 161.9 | 224.4 | 0.9450 | 0.9293 |
-| 102-channel backward decoder (`102 -> 1`) | 0.3082 | 3.0998 | 10.06x | 355.4 | 1148.2 | 0.9813 | 0.8695 |
+| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2868 | 0.2639 | 0.92x | 104.9 | 540.7 | 0.9990 | 0.9990 |
+| Longer lag window (`600` lags) | 0.1474 | 0.3589 | 2.43x | 101.1 | 543.6 | 0.9989 | 0.9989 |
+| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1671 | 1.2794 | 7.66x | 108.0 | 368.6 | 0.9989 | 0.9990 |
+| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0242 | 0.3382 | 14.00x | 98.7 | 540.6 | 0.9989 | 0.9990 |
+| EEG-scale forward model (`16 -> 102`) | 0.0544 | 0.0840 | 1.55x | 163.6 | 235.6 | 0.9450 | 0.9293 |
+| 102-channel backward decoder (`102 -> 1`) | 0.3676 | 3.2443 | 8.83x | 355.1 | 1057.2 | 0.9711 | 0.8695 |
 
 The benchmark outcome is not "ffTRF is always faster." In the small fixed-ridge
 1-to-1 cases, mTRF can be comparable or faster. The main pattern is that ffTRF
 pulls ahead once lag count, channel count, CV grid size, or segmented spectral
 workflows get heavy, and the memory advantage becomes much clearer in those
 same regimes. In the current benchmark runs, the most pronounced gains are the
-cross-validated ridge case (`6.92x`), the segmented Hann workflow (`11.96x`),
-and the 102-channel backward decoder (`10.06x`), all while preserving very
+cross-validated ridge case (`7.66x`), the segmented Hann workflow (`14.00x`),
+and the 102-channel backward decoder (`8.83x`), all while preserving very
 similar or better held-out accuracy. The improved CV row is especially
 relevant for current `ffTRF`: validation predictors are now transformed once
 per fold and reused across lambda candidates, which lowers CV scoring cost
@@ -86,12 +86,14 @@ built from the mean raw 16-band stimulus, compressed with exponent `0.4`, and
 then z-scored per segment. As above, lambda selection uses `neg_mse` while
 held-out Pearson `r` is reported separately. To keep the real-data example
 practical to run, that backward part uses a lighter default setup (`15`
-lambdas from `1e-8` to `1e6`, `k=3`, `0 to 350 ms`) and configures the ffTRF
-fit with `segment_duration=2.0`, `overlap=0.5`, and `window="hann"`:
+lambdas from `1e-8` to `1e6`, `k=3`, requested lags from `0 to 350 ms`) and
+configures the ffTRF fit with `segment_duration=2.0`, `overlap=0.5`, and
+`window="hann"`. As in mTRF, the backward direction reverses those requested
+lags into an approximately `-344 to 0 ms` physical decoder window:
 
 | Dataset | ffTRF selected lambda | mTRF selected lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r | ffTRF CV fit (s) | ffTRF peak RSS (MiB) | mTRF CV fit (s) | mTRF peak RSS (MiB) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Backward envelope reconstruction (`128 -> 1`, `fs=128 Hz`, `0 to 350 ms`) | 100000 | 1000 | 0.0536 | 0.1109 | 0.0850 | 0.1046 | 6.3356 | 766.3 | 452.0112 | 4083.4 |
+| Backward envelope reconstruction (`128 -> 1`, `fs=128 Hz`, requested `0 to 350 ms`) | 10000 | 1000 | 0.1368 | 0.1109 | 0.1179 | 0.1046 | 3.1062 | 652.5 | 452.0112 | 4083.4 |
 
 The backward comparison is substantially heavier than the forward one on this
 sample, so the reduced grid/fold defaults are intentional.

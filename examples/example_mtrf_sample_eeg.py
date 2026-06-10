@@ -833,8 +833,13 @@ def main() -> None:
             f"{float(args.backward_envelope_compression):.3f}"
         )
         print(
-            f"  lag window: {backward_n_lags} samples "
-            f"(0.000000 to {float(backward_tmax):.6f} s)"
+            f"  requested lag window: {backward_n_lags} samples "
+            f"(0.000000 to {float(backward_tmax):.6f} s, upper endpoint exclusive)"
+        )
+        print(
+            "  physical decoder lags: "
+            f"{float(backward_fftrf_model.times[0]):.6f} to "
+            f"{float(backward_fftrf_model.times[-1]):.6f} s"
         )
         print(
             f"  CV lambda grid: {np.array2string(np.asarray(backward_regularization_grid), precision=3)}"

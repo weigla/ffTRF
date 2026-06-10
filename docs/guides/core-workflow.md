@@ -26,6 +26,12 @@ Construct the estimator with:
 This choice affects how `train(...)`, `predict(...)`, `score(...)`, and the
 diagnostic methods interpret `stimulus` and `response`.
 
+For compatibility with mTRF, backward fitting also reverses the requested lag
+samples. A backward call with `tmin=0.0` and `tmax=0.400` therefore stores
+decoder lags from approximately `-0.400` seconds through `0` seconds in
+`model.times`. ffTRF keeps its half-open endpoint convention, so the exact
+first lag depends on the sampling rate.
+
 ## 3. Fit the Model
 
 The main entry point is `train(...)`.
