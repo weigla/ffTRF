@@ -6,6 +6,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import pickle
 from pathlib import Path
+import random
 from typing import Callable, Sequence
 
 import numpy as np
@@ -350,7 +351,9 @@ class TRF:
             value, ``False`` returns one score per output, and a sequence of
             indices averages only over the selected outputs.
         seed:
-            Optional random seed for shuffling trial order before creating folds.
+            Optional random seed for shuffling trial order before creating
+            folds. Seeded shuffling follows Python's ``random`` implementation
+            to match ``mTRF`` fold assignments.
         show_progress:
             If ``True`` and cross-validation is active, print a small progress
             indicator to standard error while fold/candidate evaluations run.
@@ -2469,8 +2472,7 @@ class TRF:
 
         indices = np.arange(n_trials)
         if seed is not None:
-            rng = np.random.default_rng(seed)
-            rng.shuffle(indices)
+            random.Random(seed).shuffle(indices)
         folds = [fold for fold in np.array_split(indices, n_folds) if len(fold) > 0]
 
         per_reg_scores = np.zeros(

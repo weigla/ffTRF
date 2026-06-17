@@ -474,6 +474,58 @@ def test_cross_validation_n_jobs_matches_serial_results() -> None:
     assert np.allclose(parallel.transfer_function, serial.transfer_function, rtol=1e-10, atol=1e-12)
 
 
+def test_cross_validation_seed_matches_mtrf_fold_shuffle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rng = np.random.default_rng(115)
+    fs = 100
+    kernel = np.zeros(8)
+    kernel[2] = 1.0
+    stimulus, response = _simulate_trials(
+        rng=rng,
+        n_trials=7,
+        n_samples=128,
+        kernel=kernel,
+        noise_scale=0.05,
+    )
+
+    validation_folds: list[tuple[int, ...]] = []
+    original = estimator_module._score_regularization_grid_for_fold
+
+    def recording_scorer(*args, **kwargs):
+        validation_folds.append(
+            tuple(
+                next(
+                    index
+                    for index, trial in enumerate(stimulus)
+                    if trial is validation_trial
+                )
+                for validation_trial in kwargs["val_predictors"]
+            )
+        )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        estimator_module,
+        "_score_regularization_grid_for_fold",
+        recording_scorer,
+    )
+
+    model = TRF(direction=1)
+    model.train(
+        stimulus=stimulus,
+        response=response,
+        fs=fs,
+        tmin=0.0,
+        tmax=0.08,
+        regularization=[1e-3],
+        k=3,
+        seed=7,
+    )
+
+    assert validation_folds == [(5, 6, 4), (0, 3), (1, 2)]
+
+
 def test_predict_trials_from_weights_matches_reference_convolution() -> None:
     rng = np.random.default_rng(135)
     predictor_trials = [

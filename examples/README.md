@@ -34,7 +34,7 @@ practical with `TRF`:
 - `example_frequency_resolved_weights.py`
   Spectrogram-like frequency-resolved view of one recovered kernel, shown as both signed weights and Hilbert-envelope power.
 - `example_mtrf_sample_eeg.py`
-  Optional real-data comparison against the public mTRF speech EEG sample, with `neg_mse`-based lambda selection and held-out Pearson reporting for both a forward benchmark and a backward compressed-envelope benchmark on the same split; the backward target uses a `p=0.4` broadband compression, and the backward ffTRF fit uses segmented Hann windows plus a wider lambda search.
+  Optional real-data comparison against the public mTRF speech EEG sample, with `neg_mse`-based lambda selection and held-out Pearson reporting for both a forward benchmark and a backward compressed-envelope benchmark on the same split; the backward target uses a `p=0.4` broadband compression, and optional segmented Hann settings are available for practical forward and backward ffTRF runs.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`

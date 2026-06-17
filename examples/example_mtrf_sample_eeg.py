@@ -78,6 +78,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the additional backward CV benchmark.",
     )
     parser.add_argument(
+        "--forward-segment-duration",
+        type=float,
+        default=0.0,
+        help=(
+            "Segment duration in seconds for the forward ffTRF benchmark. "
+            "Use 0 for the whole-trial matched baseline."
+        ),
+    )
+    parser.add_argument(
+        "--forward-overlap",
+        type=float,
+        default=0.0,
+        help="Overlap for optional segmented forward ffTRF estimation.",
+    )
+    parser.add_argument(
+        "--forward-window",
+        type=str,
+        default="none",
+        help=(
+            "Window for optional segmented forward ffTRF estimation. "
+            "The matched baseline uses 'none'."
+        ),
+    )
+    parser.add_argument(
         "--backward-stop-seconds",
         type=float,
         default=0.35,
@@ -110,20 +134,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backward-segment-duration",
         type=float,
-        default=2.0,
-        help="Segment duration in seconds for the backward ffTRF benchmark.",
+        default=0.0,
+        help=(
+            "Segment duration in seconds for the backward ffTRF benchmark. "
+            "Use 0 for the whole-trial matched baseline."
+        ),
     )
     parser.add_argument(
         "--backward-overlap",
         type=float,
-        default=0.5,
-        help="Segment overlap fraction for the backward ffTRF benchmark.",
+        default=0.0,
+        help="Overlap for optional segmented ffTRF estimation.",
     )
     parser.add_argument(
         "--backward-window",
         type=str,
-        default="hann",
-        help="Window name for the backward ffTRF benchmark. Use 'none' to disable.",
+        default="none",
+        help=(
+            "Window for optional segmented ffTRF estimation. "
+            "The matched baseline uses 'none'."
+        ),
     )
     parser.add_argument(
         "--backward-envelope-compression",
@@ -221,6 +251,7 @@ def fit_fftrf(
     segment_duration: float | None = None,
     overlap: float | None = None,
     window: str | None = None,
+    detrend: str | None = None,
     k: int | None = None,
     seed: int | None = None,
 ) -> tuple[TRF, np.ndarray | float | None]:
@@ -242,6 +273,7 @@ def fit_fftrf(
     if overlap is not None:
         train_kwargs["overlap"] = overlap
     train_kwargs["window"] = window
+    train_kwargs["detrend"] = detrend
     if k is not None:
         train_kwargs["k"] = k
     if seed is not None:
@@ -304,6 +336,9 @@ def benchmark_worker(
     method: str,
     repeats: int,
     warmup: int,
+    forward_segment_duration: float,
+    forward_overlap: float,
+    forward_window: str,
     backward_stop_seconds: float,
     backward_regularization_min: float,
     backward_regularization_max: float,
@@ -326,6 +361,12 @@ def benchmark_worker(
             "--worker-method",
             method,
             "--skip-backward",
+            "--forward-segment-duration",
+            str(forward_segment_duration),
+            "--forward-overlap",
+            str(forward_overlap),
+            "--forward-window",
+            str(forward_window),
             "--backward-stop-seconds",
             str(backward_stop_seconds),
             "--backward-regularization-min",
@@ -373,10 +414,30 @@ def run_worker_once(
         np.log10(float(args.backward_regularization_max)),
         int(args.backward_regularization_count),
     )
+    forward_segment_duration = float(args.forward_segment_duration)
+    forward_window = None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
+    backward_segment_duration = float(args.backward_segment_duration)
     backward_window = None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
 
     start = perf_counter()
     if toolbox_name == "fftrf":
+        is_forward = direction == "forward"
+        fftrf_segment_duration = (
+            None
+            if (is_forward and forward_segment_duration <= 0.0)
+            or (not is_forward and backward_segment_duration <= 0.0)
+            else (forward_segment_duration if is_forward else backward_segment_duration)
+        )
+        fftrf_overlap = (
+            None
+            if is_forward and forward_segment_duration <= 0.0
+            else (float(args.forward_overlap) if is_forward else float(args.backward_overlap))
+        )
+        fftrf_window = (
+            None
+            if is_forward and forward_segment_duration <= 0.0
+            else (forward_window if is_forward else backward_window)
+        )
         fit_fftrf(
             setup.train_stimulus if direction == "forward" else setup.backward_train_stimulus,
             setup.train_response,
@@ -391,9 +452,10 @@ def run_worker_once(
             k=setup.k_folds if direction == "forward" else int(args.backward_k_folds),
             seed=setup.cv_seed,
             direction=1 if direction == "forward" else -1,
-            segment_duration=None if direction == "forward" else float(args.backward_segment_duration),
-            overlap=None if direction == "forward" else float(args.backward_overlap),
-            window=None if direction == "forward" else backward_window,
+            segment_duration=fftrf_segment_duration,
+            overlap=fftrf_overlap,
+            window=fftrf_window,
+            detrend=None,
         )
     else:
         fit_mtrf(
@@ -591,6 +653,9 @@ def main() -> None:
         method="fftrf-forward",
         repeats=args.repeats,
         warmup=args.warmup,
+        forward_segment_duration=float(args.forward_segment_duration),
+        forward_overlap=float(args.forward_overlap),
+        forward_window=str(args.forward_window),
         backward_stop_seconds=float(args.backward_stop_seconds),
         backward_regularization_min=float(args.backward_regularization_min),
         backward_regularization_max=float(args.backward_regularization_max),
@@ -605,6 +670,9 @@ def main() -> None:
         method="mtrf-forward",
         repeats=args.repeats,
         warmup=args.warmup,
+        forward_segment_duration=float(args.forward_segment_duration),
+        forward_overlap=float(args.forward_overlap),
+        forward_window=str(args.forward_window),
         backward_stop_seconds=float(args.backward_stop_seconds),
         backward_regularization_min=float(args.backward_regularization_min),
         backward_regularization_max=float(args.backward_regularization_max),
@@ -621,6 +689,8 @@ def main() -> None:
     backward_mtrf_peak_memories = []
     backward_regularization_grid = None
     backward_k_folds = None
+    forward_segment_duration = float(args.forward_segment_duration)
+    forward_window = None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
 
     fftrf_model, fftrf_cv_scores = fit_fftrf(
         setup.train_stimulus,
@@ -632,6 +702,14 @@ def main() -> None:
         k=setup.k_folds,
         seed=setup.cv_seed,
         direction=1,
+        segment_duration=(
+            None
+            if forward_segment_duration <= 0.0
+            else forward_segment_duration
+        ),
+        overlap=None if forward_segment_duration <= 0.0 else float(args.forward_overlap),
+        window=None if forward_segment_duration <= 0.0 else forward_window,
+        detrend=None,
     )
     mtrf_model, mtrf_cv_scores = fit_mtrf(
         setup.train_stimulus,
@@ -691,6 +769,7 @@ def main() -> None:
     backward_mtrf_model = None
     backward_tmax = None
     backward_n_lags = None
+    backward_segment_duration = float(args.backward_segment_duration)
     backward_window = None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
 
     if not args.skip_backward:
@@ -708,6 +787,9 @@ def main() -> None:
             method="fftrf-backward",
             repeats=args.repeats,
             warmup=args.warmup,
+            forward_segment_duration=float(args.forward_segment_duration),
+            forward_overlap=float(args.forward_overlap),
+            forward_window=str(args.forward_window),
             backward_stop_seconds=float(args.backward_stop_seconds),
             backward_regularization_min=float(args.backward_regularization_min),
             backward_regularization_max=float(args.backward_regularization_max),
@@ -722,6 +804,9 @@ def main() -> None:
             method="mtrf-backward",
             repeats=args.repeats,
             warmup=args.warmup,
+            forward_segment_duration=float(args.forward_segment_duration),
+            forward_overlap=float(args.forward_overlap),
+            forward_window=str(args.forward_window),
             backward_stop_seconds=float(args.backward_stop_seconds),
             backward_regularization_min=float(args.backward_regularization_min),
             backward_regularization_max=float(args.backward_regularization_max),
@@ -742,9 +827,14 @@ def main() -> None:
             direction=-1,
             k=backward_k_folds,
             seed=setup.cv_seed,
-            segment_duration=float(args.backward_segment_duration),
+            segment_duration=(
+                None
+                if backward_segment_duration <= 0.0
+                else backward_segment_duration
+            ),
             overlap=float(args.backward_overlap),
             window=backward_window,
+            detrend=None,
         )
         backward_mtrf_model, backward_mtrf_cv_scores = fit_mtrf(
             setup.backward_train_stimulus,
@@ -811,6 +901,20 @@ def main() -> None:
         f"(warmup: {args.warmup})"
     )
     print("Forward comparison")
+    if forward_segment_duration <= 0.0:
+        print(
+            "  ffTRF forward spectral settings: "
+            "whole-trial, overlap=0.00, window=none, detrend=none "
+            "(matched baseline)"
+        )
+    else:
+        print(
+            "  ffTRF forward spectral settings: "
+            f"segment_duration={forward_segment_duration:.3f} s, "
+            f"overlap={float(args.forward_overlap):.2f}, "
+            f"window={forward_window if forward_window is not None else 'none'}, "
+            "detrend=none (optional segmented estimator)"
+        )
     print(f"  ffTRF selected lambda: {fftrf_model.regularization}")
     print(f"  mTRF selected lambda: {mtrf_model.regularization}")
     print(f"  ffTRF CV scores (neg MSE): {np.array2string(np.asarray(fftrf_cv_scores), precision=4)}")
@@ -845,12 +949,20 @@ def main() -> None:
             f"  CV lambda grid: {np.array2string(np.asarray(backward_regularization_grid), precision=3)}"
         )
         print(f"  CV folds: {backward_k_folds}")
-        print(
-            "  ffTRF backward spectral settings: "
-            f"segment_duration={float(args.backward_segment_duration):.3f} s, "
-            f"overlap={float(args.backward_overlap):.2f}, "
-            f"window={backward_window if backward_window is not None else 'none'}"
-        )
+        if backward_segment_duration <= 0.0:
+            print(
+                "  ffTRF backward spectral settings: "
+                "whole-trial, overlap=0.00, window=none, detrend=none "
+                "(matched baseline)"
+            )
+        else:
+            print(
+                "  ffTRF backward spectral settings: "
+                f"segment_duration={backward_segment_duration:.3f} s, "
+                f"overlap={float(args.backward_overlap):.2f}, "
+                f"window={backward_window if backward_window is not None else 'none'}, "
+                "detrend=none (optional segmented estimator)"
+            )
         print(f"  ffTRF selected lambda: {backward_fftrf_model.regularization}")
         print(f"  mTRF selected lambda: {backward_mtrf_model.regularization}")
         print(

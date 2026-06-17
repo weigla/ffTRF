@@ -13,7 +13,122 @@ for:
 - [API Reference](https://weigla.github.io/ffTRF/reference/)
 - [Development](https://weigla.github.io/ffTRF/development/)
 
-## Performance
+## Real EEG Benchmark
+
+The primary practical benchmark uses the official speech-EEG sample dataset
+from the mTRF ecosystem:
+
+```bash
+pixi run -e compare python examples/example_mtrf_sample_eeg.py
+```
+
+It contains 10 twelve-second segments sampled at 128 Hz. Seven segments are
+used for training and cross-validation, and the final three are held out. Both
+toolboxes use the same lag samples, lambda grids, seeded folds, `neg_mse`
+selection metric, and held-out Pearson-correlation evaluation.
+
+- Forward encoding predicts 128 EEG channels from the 16-band speech
+  spectrogram using lags from 0 to approximately 400 ms.
+- Backward decoding reconstructs a one-dimensional compressed speech-envelope
+  proxy from 128 EEG channels. The requested 0 to 350 ms window becomes the
+  mTRF-compatible physical decoder window from -343.75 to 0 ms.
+- The matched ffTRF baseline uses whole-trial rectangular estimation without
+  segmentation, windowing, multitaper smoothing, or detrending.
+
+Results from a representative isolated run on Apple M3 with Python 3.13,
+NumPy 2.4, SciPy 1.17, and mTRF 2.1.2:
+
+### Matched Configuration
+
+| Direction | ffTRF lambda | mTRF lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Forward (`16 -> 128`) | 10000 | 3162.28 | 0.0296 | 0.0200 | 0.0345 | 0.0172 |
+| Backward (`128 -> 1`) | 1000000 | 1000 | 0.0469 | 0.1109 | 0.0370 | 0.1046 |
+
+| Direction | ffTRF CV fit (s) | mTRF CV fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Forward (`16 -> 128`) | 8.7038 | 3.9760 | 0.46x | 834.3 | 445.4 |
+| Backward (`128 -> 1`) | 15.0707 | 211.3287 | 14.02x | 3222.3 | 3910.7 |
+
+The forward models have similarly low held-out correlations on this small,
+noisy sample, with ffTRF slightly higher on this split while mTRF is faster and
+uses less memory. In the matched backward comparison, ffTRF is much faster and
+uses less peak memory, but it does **not** currently reproduce mTRF's held-out
+accuracy.
+
+### Why the Forward Model Also Benefits from 2-Second Hann Segments
+
+The whole-trial forward row above is the closest mTRF comparison, but it is not
+the most efficient practical ffTRF setting. Each 12-second trial contributes an
+FFT with about `769` positive-frequency bins. A 2-second segment uses `256`
+samples and about `129` bins, so cross-validation solves and validation
+predictions repeat substantially less frequency-domain work. The overlapping
+Hann segments also provide more averaged spectral observations on this noisy
+sample.
+
+On the same train/test split, the practical forward setting improves the
+resource profile while preserving the same lambda search and held-out
+evaluation:
+
+| Forward configuration | Selected lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ffTRF, whole trial / rectangular | 10000 | 0.0296 | 0.0345 | 8.7038 | 834.3 |
+| ffTRF, 2 s / 50% overlap / Hann | 10000 | 0.0367 | 0.0386 | 2.6262 | 311.2 |
+| mTRF, finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 3.9760 | 445.4 |
+
+As with the segmented backward setting, this is not a strict solver-equivalence
+claim because the spectral estimator has changed. Reproduce the focused
+forward run with:
+
+```bash
+pixi run -e compare python examples/example_mtrf_sample_eeg.py \
+  --skip-backward \
+  --forward-segment-duration 2.0 \
+  --forward-overlap 0.5 \
+  --forward-window hann
+```
+
+### Why the Backward Model Uses 2-Second Hann Segments
+
+The whole-trial setting above is the closest parameter match, but it is a poor
+spectral estimator for this particular backward problem. ffTRF solves one
+`128 x 128` EEG covariance system at every frequency. With whole-trial
+estimation, each of the seven training trials contributes only one observation
+per frequency, so each covariance has rank at most seven before ridge
+regularization. Cross-validation folds contain even fewer training trials.
+This makes the high-dimensional decoder strongly underdetermined.
+
+mTRF does not have the same per-frequency sample limitation. It directly fits
+the requested 45-lag finite impulse response using the time-domain lag matrix.
+ffTRF instead estimates an unrestricted frequency response and extracts the
+requested lag interval afterward. That difference is small in the forward
+model, but important for this `128 -> 1` backward model.
+
+For the practical ffTRF backward fit, the trials are therefore split into
+overlapping 2-second segments. This supplies many more spectral observations
+per frequency, while the Hann window reduces spectral leakage at the segment
+boundaries. On the same train/test split:
+
+| Backward configuration | Selected lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ffTRF, whole trial / rectangular | 1000000 | 0.0469 | 0.0370 | 15.0707 | 3222.3 |
+| ffTRF, 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
+| mTRF, finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
+
+The 2-second Hann configuration is consequently the recommended practical
+setting for this ffTRF backward example: it is both more accurate and less
+resource-intensive than the whole-trial frequency estimate. It is still a
+different spectral estimator from mTRF, so this result demonstrates practical
+performance rather than strict solver equivalence. Reproduce it with:
+
+```bash
+pixi run -e compare python examples/example_mtrf_sample_eeg.py \
+  --backward-segment-duration 2.0 \
+  --backward-overlap 0.5 \
+  --backward-window hann
+```
+
+## Controlled mTRF Validation
 
 One of the main reasons `ffTRF` exists is to avoid explicit lag-matrix
 construction in the regimes where that becomes expensive: high sample rates,
@@ -21,82 +136,44 @@ long lag windows, cross-validated ridge grids, segmented spectral estimation,
 and high-dimensional forward or backward models.
 
 The benchmark in [`examples/benchmark_runtime.py`](examples/benchmark_runtime.py)
-compares `ffTRF` against `mTRF` on identical simulated data, measures
-median fit time over 3 timed repetitions after 1 warmup run, records per-fit
-peak RSS in isolated worker processes, and reports held-out Pearson
-correlation on a separate simulation split. The latest full report generated
-with `pixi run -e compare benchmark-demo` is stored in
-[`artifacts/runtime_benchmark.md`](artifacts/runtime_benchmark.md).
-Cross-validated `TRF` fits now also batch validation-time prediction by caching
-predictor FFTs within each fold, so the CV-heavy rows better reflect the
-current implementation rather than the older per-kernel convolution path.
+compares `ffTRF` and `mTRF` on identical simulated data with the same lag
+samples, ridge values, trial splits, and held-out evaluation data. The primary
+rows below use whole-trial rectangular estimation in ffTRF: no short segments,
+no Hann window, and no multitaper smoothing. They isolate solver agreement
+under known ground truth.
 
-Representative results on Apple M3, Python 3.13, NumPy 2.4, SciPy 1.17, and
-mTRF 2.1:
+Each fit is measured in an isolated process. The table reports median runtime
+over 3 repetitions after 1 warmup, peak RSS, held-out Pearson correlation, and
+the correlation between the recovered kernel banks. Regenerate the complete
+report with `pixi run -e compare benchmark-demo`.
 
-| Scenario | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r |
+Representative results on the same system:
+
+| Scenario | ffTRF fit (s) | mTRF fit (s) | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r | Kernel r |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2868 | 0.2639 | 0.92x | 104.9 | 540.7 | 0.9990 | 0.9990 |
-| Longer lag window (`600` lags) | 0.1474 | 0.3589 | 2.43x | 101.1 | 543.6 | 0.9989 | 0.9989 |
-| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1671 | 1.2794 | 7.66x | 108.0 | 368.6 | 0.9989 | 0.9990 |
-| Segmented Hann estimate (`4096`-sample segments, `50%` overlap) | 0.0242 | 0.3382 | 14.00x | 98.7 | 540.6 | 0.9989 | 0.9990 |
-| EEG-scale forward model (`16 -> 102`) | 0.0544 | 0.0840 | 1.55x | 163.6 | 235.6 | 0.9450 | 0.9293 |
-| 102-channel backward decoder (`102 -> 1`) | 0.3676 | 3.2443 | 8.83x | 355.1 | 1057.2 | 0.9711 | 0.8695 |
+| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2926 | 0.2661 | 103.0 | 540.8 | 0.9990 | 0.9990 | 1.0000 |
+| Longer lag window (`600` lags) | 0.1456 | 0.3466 | 100.5 | 543.4 | 0.9989 | 0.9989 | 1.0000 |
+| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1655 | 1.1971 | 105.7 | 367.9 | 0.9989 | 0.9990 | 1.0000 |
+| EEG-scale forward model (`16 -> 102`) | 0.0553 | 0.0830 | 162.9 | 231.0 | 0.9450 | 0.9293 | 0.9884 |
 
-The benchmark outcome is not "ffTRF is always faster." In the small fixed-ridge
-1-to-1 cases, mTRF can be comparable or faster. The main pattern is that ffTRF
-pulls ahead once lag count, channel count, CV grid size, or segmented spectral
-workflows get heavy, and the memory advantage becomes much clearer in those
-same regimes. In the current benchmark runs, the most pronounced gains are the
-cross-validated ridge case (`7.66x`), the segmented Hann workflow (`14.00x`),
-and the 102-channel backward decoder (`8.83x`), all while preserving very
-similar or better held-out accuracy. The improved CV row is especially
-relevant for current `ffTRF`: validation predictors are now transformed once
-per fold and reused across lambda candidates, which lowers CV scoring cost
-without changing the selected model or the reported scores.
+These controlled rows show that ffTRF can recover essentially the same known
+kernels and held-out predictions as mTRF. Small fixed-ridge problems can still
+favor mTRF on runtime, but ffTRF avoids constructing the full lag matrix, so
+its memory use grows more gently and it becomes faster as lag count,
+cross-validation work, or dimensionality increases.
 
-## Real EEG Comparison
+### Optional Spectral Estimation
 
-The repository also includes a comparison on the official speech-EEG sample
-dataset used by the mTRF ecosystem:
+Short overlapping segments, windows, and multitaper estimation are useful
+ffTRF features, but they change the spectral estimator and are not a strict
+mTRF comparison:
 
-```bash
-pixi run -e compare python examples/example_mtrf_sample_eeg.py
-```
+| Optional ffTRF setting | ffTRF fit (s) | mTRF baseline fit (s) | ffTRF held-out r | mTRF held-out r |
+| --- | ---: | ---: | ---: | ---: |
+| `4096`-sample segments, `50%` overlap, Hann window | 0.0239 | 0.2906 | 0.9989 | 0.9990 |
 
-On the current run with 7 training segments, 3 held-out test segments, a
-5-fold CV grid over 17 lambdas, and a 0 to 400 ms forward lag window,
-regularization is selected with the mTRF-compatible `neg_mse` metric while
-the table below still reports held-out Pearson `r`:
-
-| Dataset | ffTRF selected lambda | mTRF selected lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r | ffTRF CV fit (s) | ffTRF peak RSS (MiB) | mTRF CV fit (s) | mTRF peak RSS (MiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Official speech EEG sample (`16 -> 128`, `fs=128 Hz`) | 10000 | 3162.28 | 0.0296 | 0.0200 | 0.0345 | 0.0172 | 14.2327 | 735.6 | 7.3751 | 423.0 |
-
-That real-data example is useful as a sanity check rather than a pure runtime
-benchmark. In this setting, ffTRF produced better held-out channel
-correlations, while mTRF completed the forward CV fit faster and with lower
-peak RSS on the current run. The reported fit times and peak RSS values come
-from isolated worker processes so they are not inflated by plotting or previous
-fits in the same Python process.
-
-The same script also includes an additional backward comparison on the same
-train/test split: EEG is used to reconstruct a broadband speech-envelope proxy
-built from the mean raw 16-band stimulus, compressed with exponent `0.4`, and
-then z-scored per segment. As above, lambda selection uses `neg_mse` while
-held-out Pearson `r` is reported separately. To keep the real-data example
-practical to run, that backward part uses a lighter default setup (`15`
-lambdas from `1e-8` to `1e6`, `k=3`, requested lags from `0 to 350 ms`) and
-configures the ffTRF fit with `segment_duration=2.0`, `overlap=0.5`, and
-`window="hann"`. As in mTRF, the backward direction reverses those requested
-lags into an approximately `-344 to 0 ms` physical decoder window:
-
-| Dataset | ffTRF selected lambda | mTRF selected lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r | ffTRF CV fit (s) | ffTRF peak RSS (MiB) | mTRF CV fit (s) | mTRF peak RSS (MiB) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Backward envelope reconstruction (`128 -> 1`, `fs=128 Hz`, requested `0 to 350 ms`) | 10000 | 1000 | 0.1368 | 0.1109 | 0.1179 | 0.1046 | 3.1062 | 652.5 | 452.0112 | 4083.4 |
-
-The backward comparison is substantially heavier than the forward one on this
-sample, so the reduced grid/fold defaults are intentional.
+This row demonstrates the segmented workflow and its computational cost; it is
+not used as evidence that the two solvers are configured identically.
 
 ## Installation
 
