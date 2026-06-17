@@ -1,84 +1,203 @@
 # ffTRF
 
-`ffTRF` is a Python toolbox for fitting temporal response functions in the
-frequency domain. It is designed for continuous stimulus-response modeling with
-a small public API centered on `fftrf.TRF`.
+`ffTRF` is a Python toolbox for fitting temporal response functions (TRFs) and
+related linear deconvolution models in the frequency domain. It is designed for
+scientists who work with continuous stimulus-response data, for example speech
+features and EEG, and want a workflow that feels familiar if they have used
+`mTRFpy` or other lag-matrix TRF tools.
 
-The full documentation is hosted at
-[weigla.github.io/ffTRF](https://weigla.github.io/ffTRF/), with dedicated pages
-for:
+The main public API is centered on `fftrf.TRF`. It supports forward encoding
+models, backward decoding models, cross-validated ridge regularization,
+multi-trial data, optional segmented or multi-taper spectral estimation,
+prediction and scoring, bootstrap intervals, permutation tests, diagnostics,
+and plotting helpers.
 
-- [Getting Started](https://weigla.github.io/ffTRF/getting-started/)
-- [Examples](https://weigla.github.io/ffTRF/examples/)
-- [API Reference](https://weigla.github.io/ffTRF/reference/)
-- [Development](https://weigla.github.io/ffTRF/development/)
+Full documentation: [weigla.github.io/ffTRF](https://weigla.github.io/ffTRF/)
+
+## Why ffTRF?
+
+Traditional time-domain TRF estimators build an explicit lagged design matrix:
+each predictor is copied once per requested lag. That representation is direct
+and interpretable, but it can become large when recordings are long, sampling
+rates are high, lag windows are wide, regularization is cross-validated, or the
+predictor side has many channels.
+
+`ffTRF` fits the same kind of linear stimulus-response model from spectral
+sufficient statistics instead. In regimes where lag matrices become expensive,
+this can reduce memory use and, in many cases, runtime. The trade-off is that
+the spectral estimator matters: whole-trial spectra are the closest matched
+comparison to a standard finite-lag mTRF fit, while segmented/windowed spectra
+are often better practical settings for noisy continuous data.
+
+## Installation
+
+For a released package:
+
+```bash
+pip install fftrf
+```
+
+For a local editable checkout:
+
+```bash
+pip install -e .
+```
+
+Optional extras:
+
+```bash
+pip install -e ".[compare]"  # mTRF comparisons and plotting
+pip install -e ".[test]"     # test suite
+pip install -e ".[docs]"     # documentation build
+```
+
+For reproducible development and benchmark runs, the repository uses Pixi:
+
+```bash
+pixi install
+pixi run import-check
+pixi run -e test test
+```
+
+## Quick Start
+
+`ffTRF` uses time as the first axis. A single trial is a NumPy array with shape
+`(n_samples, n_features)` or `(n_samples, n_outputs)`. Multiple trials are
+passed as lists of arrays.
+
+```python
+import numpy as np
+from fftrf import TRF
+
+# Example shapes:
+# stimulus_train: list of (n_samples, n_features) arrays
+# response_train: list of (n_samples, n_channels) arrays
+# stimulus_test:  list of held-out stimulus trials
+# response_test:  list of held-out response trials
+
+model = TRF(direction=1, metric="pearsonr")
+cv_scores = model.train(
+    stimulus=stimulus_train,
+    response=response_train,
+    fs=128,
+    tmin=0.0,
+    tmax=0.4,
+    regularization=np.logspace(-4, 4, 17),
+    k=5,
+    seed=7,
+)
+
+predicted_response, heldout_r = model.predict(
+    stimulus=stimulus_test,
+    response=response_test,
+    average=False,
+)
+
+fig, ax = model.plot(input_index=0, output_index=0)
+```
+
+For a backward decoder, use `TRF(direction=-1)`. As in `mTRF`, backward fitting
+reverses the requested lag samples: a user-facing request such as
+`tmin=0.0, tmax=0.4` stores physical decoder lags ending at zero in
+`model.times`.
+
+## Under the Hood
+
+Instead of constructing an explicit lag matrix, `ffTRF`:
+
+1. estimates predictor auto-spectra and predictor-target cross-spectra,
+2. solves a ridge-regularized transfer function at each frequency, and
+3. converts the transfer function into a lag-domain impulse response over the
+   requested `[tmin, tmax)` interval.
+
+By default, each trial is treated as one FFT segment. That is the closest
+setting to a standard mTRF-style finite-lag comparison:
+
+```python
+model.train(..., segment_length=None, window=None)
+```
+
+For noisy continuous data, it is often useful to estimate spectra from shorter
+overlapping segments:
+
+```python
+model.train(
+    ...,
+    segment_duration=2.0,
+    overlap=0.5,
+    window="hann",
+)
+```
+
+With multiple regularization candidates, `ffTRF` caches per-trial spectra so
+cross-validation can reuse the FFT work across folds and lambda values. Direct
+single-lambda fits use a lower-memory aggregate spectral path.
+
+## Core Conventions
+
+- Time is always axis 0.
+- A single trial can be 1D or 2D.
+- Multiple trials are represented as a list of arrays.
+- `TRF(direction=1)` fits stimulus -> response.
+- `TRF(direction=-1)` fits response -> stimulus.
+- Stored lag-domain weights have shape `(n_inputs, n_lags, n_outputs)`.
+- The lag interval is sample based and half-open: `[tmin, tmax)`.
 
 ## Real EEG Benchmark
 
-The primary practical benchmark uses the official speech-EEG sample dataset
-from the mTRF ecosystem:
+The primary practical benchmark uses the public speech-EEG sample distributed
+with the mTRF ecosystem:
 
 ```bash
 pixi run -e compare python examples/example_mtrf_sample_eeg.py
 ```
 
-It contains 10 twelve-second segments sampled at 128 Hz. Seven segments are
-used for training and cross-validation, and the final three are held out. Both
-toolboxes use the same lag samples, lambda grids, seeded folds, `neg_mse`
-selection metric, and held-out Pearson-correlation evaluation.
+The dataset contains 10 twelve-second segments sampled at 128 Hz. The benchmark
+uses seven segments for training and cross-validation and three held-out
+segments for evaluation. Both toolboxes use the same lag samples, lambda grids,
+seeded folds, `neg_mse` selection metric, and held-out Pearson-correlation
+evaluation.
 
-- Forward encoding predicts 128 EEG channels from the 16-band speech
-  spectrogram using lags from 0 to approximately 400 ms.
-- Backward decoding reconstructs a one-dimensional compressed speech-envelope
-  proxy from 128 EEG channels. The requested 0 to 350 ms window becomes the
-  mTRF-compatible physical decoder window from -343.75 to 0 ms.
-- The matched ffTRF baseline uses whole-trial rectangular estimation without
-  segmentation, windowing, multitaper smoothing, or detrending.
-
-Results from a representative isolated run on Apple M3 with Python 3.13,
+Representative isolated-process results on Apple M3 with Python 3.13,
 NumPy 2.4, SciPy 1.17, and mTRF 2.1.2:
 
-### Matched Configuration
+### Matched mTRF-Like Configuration
 
-| Direction | ffTRF lambda | mTRF lambda | ffTRF mean held-out r | mTRF mean held-out r | ffTRF median held-out r | mTRF median held-out r |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Forward (`16 -> 128`) | 10000 | 3162.28 | 0.0296 | 0.0200 | 0.0345 | 0.0172 |
-| Backward (`128 -> 1`) | 1000000 | 1000 | 0.0469 | 0.1109 | 0.0370 | 0.1046 |
+This setting uses whole-trial rectangular spectra in `ffTRF`: no segmentation,
+no windowing, no multitaper smoothing, and no detrending. It is the closest
+parameter match to the finite-lag mTRF fit.
 
-| Direction | ffTRF CV fit (s) | mTRF CV fit (s) | Speedup | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Forward (`16 -> 128`) | 8.7038 | 3.9760 | 0.46x | 834.3 | 445.4 |
-| Backward (`128 -> 1`) | 15.0707 | 211.3287 | 14.02x | 3222.3 | 3910.7 |
+| Direction | Shape | ffTRF lambda | mTRF lambda | ffTRF mean r | mTRF mean r | ffTRF fit (s) | mTRF fit (s) | ffTRF RSS (MiB) | mTRF RSS (MiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Forward encoding | `16 -> 128` | 10000 | 3162.28 | 0.0296 | 0.0200 | 8.7038 | 3.9760 | 834.3 | 445.4 |
+| Backward decoding | `128 -> 1` | 1000000 | 1000 | 0.0469 | 0.1109 | 15.0707 | 211.3287 | 3222.3 | 3910.7 |
 
-The forward models have similarly low held-out correlations on this small,
-noisy sample, with ffTRF slightly higher on this split while mTRF is faster and
-uses less memory. In the matched backward comparison, ffTRF is much faster and
-uses less peak memory, but it does **not** currently reproduce mTRF's held-out
-accuracy.
+Interpretation:
 
-### Why the Forward Model Also Benefits from 2-Second Hann Segments
+- The forward model is small enough on the predictor-lag side that mTRF remains
+  faster in the strict matched comparison.
+- The backward model is much harder for a time-domain lag matrix because the
+  predictor side has 128 EEG channels; here `ffTRF` is much faster and uses less
+  memory.
+- The matched whole-trial backward `ffTRF` fit is not the most accurate
+  practical setting for this small noisy sample.
 
-The whole-trial forward row above is the closest mTRF comparison, but it is not
-the most efficient practical ffTRF setting. Each 12-second trial contributes an
-FFT with about `769` positive-frequency bins. A 2-second segment uses `256`
-samples and about `129` bins, so cross-validation solves and validation
-predictions repeat substantially less frequency-domain work. The overlapping
-Hann segments also provide more averaged spectral observations on this noisy
-sample.
+### Practical 2 s Hann Settings
 
-On the same train/test split, the practical forward setting improves the
-resource profile while preserving the same lambda search and held-out
-evaluation:
+For this EEG example, 2-second Hann-windowed segments with 50% overlap are more
+useful practical `ffTRF` settings. They change the spectral estimator, so these
+rows are not strict solver-equivalence claims, but they limit the amount of frequency bins that are created in the background and additionaly help with this kind of continuous noisy data.
 
-| Forward configuration | Selected lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| ffTRF, whole trial / rectangular | 10000 | 0.0296 | 0.0345 | 8.7038 | 834.3 |
-| ffTRF, 2 s / 50% overlap / Hann | 10000 | 0.0367 | 0.0386 | 2.6262 | 311.2 |
-| mTRF, finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 3.9760 | 445.4 |
+| Model | Configuration | Lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Forward ffTRF | whole trial / rectangular | 10000 | 0.0296 | 0.0345 | 8.7038 | 834.3 |
+| Forward ffTRF | 2 s / 50% overlap / Hann | 10000 | 0.0367 | 0.0386 | 2.6262 | 311.2 |
+| Forward mTRF | finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 3.9760 | 445.4 |
+| Backward ffTRF | whole trial / rectangular | 1000000 | 0.0469 | 0.0370 | 15.0707 | 3222.3 |
+| Backward ffTRF | 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
+| Backward mTRF | finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
 
-As with the segmented backward setting, this is not a strict solver-equivalence
-claim because the spectral estimator has changed. Reproduce the focused
-forward run with:
+Reproduce the practical forward run:
 
 ```bash
 pixi run -e compare python examples/example_mtrf_sample_eeg.py \
@@ -88,38 +207,7 @@ pixi run -e compare python examples/example_mtrf_sample_eeg.py \
   --forward-window hann
 ```
 
-### Why the Backward Model Uses 2-Second Hann Segments
-
-The whole-trial setting above is the closest parameter match, but it is a poor
-spectral estimator for this particular backward problem. ffTRF solves one
-`128 x 128` EEG covariance system at every frequency. With whole-trial
-estimation, each of the seven training trials contributes only one observation
-per frequency, so each covariance has rank at most seven before ridge
-regularization. Cross-validation folds contain even fewer training trials.
-This makes the high-dimensional decoder strongly underdetermined.
-
-mTRF does not have the same per-frequency sample limitation. It directly fits
-the requested 45-lag finite impulse response using the time-domain lag matrix.
-ffTRF instead estimates an unrestricted frequency response and extracts the
-requested lag interval afterward. That difference is small in the forward
-model, but important for this `128 -> 1` backward model.
-
-For the practical ffTRF backward fit, the trials are therefore split into
-overlapping 2-second segments. This supplies many more spectral observations
-per frequency, while the Hann window reduces spectral leakage at the segment
-boundaries. On the same train/test split:
-
-| Backward configuration | Selected lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| ffTRF, whole trial / rectangular | 1000000 | 0.0469 | 0.0370 | 15.0707 | 3222.3 |
-| ffTRF, 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
-| mTRF, finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
-
-The 2-second Hann configuration is consequently the recommended practical
-setting for this ffTRF backward example: it is both more accurate and less
-resource-intensive than the whole-trial frequency estimate. It is still a
-different spectral estimator from mTRF, so this result demonstrates practical
-performance rather than strict solver equivalence. Reproduce it with:
+Reproduce the practical backward run:
 
 ```bash
 pixi run -e compare python examples/example_mtrf_sample_eeg.py \
@@ -128,169 +216,57 @@ pixi run -e compare python examples/example_mtrf_sample_eeg.py \
   --backward-window hann
 ```
 
-## Controlled mTRF Validation
+## Controlled Runtime Benchmark
 
-One of the main reasons `ffTRF` exists is to avoid explicit lag-matrix
-construction in the regimes where that becomes expensive: high sample rates,
-long lag windows, cross-validated ridge grids, segmented spectral estimation,
-and high-dimensional forward or backward models.
+The synthetic benchmark in
+[`examples/benchmark_runtime.py`](examples/benchmark_runtime.py) compares
+`ffTRF` and `mTRF` on simulated data with known ground-truth kernels. These rows
+are useful because the expected kernel is known and the two methods can be
+checked for agreement.
 
-The benchmark in [`examples/benchmark_runtime.py`](examples/benchmark_runtime.py)
-compares `ffTRF` and `mTRF` on identical simulated data with the same lag
-samples, ridge values, trial splits, and held-out evaluation data. The primary
-rows below use whole-trial rectangular estimation in ffTRF: no short segments,
-no Hann window, and no multitaper smoothing. They isolate solver agreement
-under known ground truth.
-
-Each fit is measured in an isolated process. The table reports median runtime
-over 3 repetitions after 1 warmup, peak RSS, held-out Pearson correlation, and
-the correlation between the recovered kernel banks. Regenerate the complete
-report with `pixi run -e compare benchmark-demo`.
-
-Representative results on the same system:
-
-| Scenario | ffTRF fit (s) | mTRF fit (s) | ffTRF peak RSS (MiB) | mTRF peak RSS (MiB) | ffTRF held-out r | mTRF held-out r | Kernel r |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high rate (`fs=10 kHz`, `60k` samples/trial, `300` lags) | 0.2926 | 0.2661 | 103.0 | 540.8 | 0.9990 | 0.9990 | 1.0000 |
-| Longer lag window (`600` lags) | 0.1456 | 0.3466 | 100.5 | 543.4 | 0.9989 | 0.9989 | 1.0000 |
-| Cross-validated ridge (`8` lambdas, `k=4`) | 0.1655 | 1.1971 | 105.7 | 367.9 | 0.9989 | 0.9990 | 1.0000 |
-| EEG-scale forward model (`16 -> 102`) | 0.0553 | 0.0830 | 162.9 | 231.0 | 0.9450 | 0.9293 | 0.9884 |
-
-These controlled rows show that ffTRF can recover essentially the same known
-kernels and held-out predictions as mTRF. Small fixed-ridge problems can still
-favor mTRF on runtime, but ffTRF avoids constructing the full lag matrix, so
-its memory use grows more gently and it becomes faster as lag count,
-cross-validation work, or dimensionality increases.
-
-### Optional Spectral Estimation
-
-Short overlapping segments, windows, and multitaper estimation are useful
-ffTRF features, but they change the spectral estimator and are not a strict
-mTRF comparison:
-
-| Optional ffTRF setting | ffTRF fit (s) | mTRF baseline fit (s) | ffTRF held-out r | mTRF held-out r |
-| --- | ---: | ---: | ---: | ---: |
-| `4096`-sample segments, `50%` overlap, Hann window | 0.0239 | 0.2906 | 0.9989 | 0.9990 |
-
-This row demonstrates the segmented workflow and its computational cost; it is
-not used as evidence that the two solvers are configured identically.
-
-## Installation
-
-Pixi is the primary supported development workflow:
+Regenerate the full report:
 
 ```bash
-pixi install
-pixi run import-check
-pixi run -e test test
+pixi run -e compare benchmark-demo
 ```
 
-For a lightweight editable install:
+Selected rows from the current benchmark report:
 
-```bash
-pip install -e .
-```
+| Scenario | Shape | Why it matters | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF RSS (MiB) | mTRF RSS (MiB) | Kernel r |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Long high-rate recording | `1 -> 1` | small fixed-ridge case where mTRF can remain competitive | 0.2926 | 0.2661 | 0.91x | 103.0 | 540.8 | 1.0000 |
+| Longer lag window | `1 -> 1` | lag matrix doubles in width | 0.1456 | 0.3466 | 2.38x | 100.5 | 543.4 | 1.0000 |
+| Cross-validated ridge | `1 -> 1` | spectra are reused across 8 lambdas and 4 folds | 0.1655 | 1.1971 | 7.23x | 105.7 | 367.9 | 1.0000 |
+| Segmented Hann estimate | `1 -> 1` | short overlapping spectra instead of whole-trial FFT | 0.0239 | 0.2906 | 12.14x | 100.2 | 539.3 | 1.0000 |
+| EEG-scale forward | `16 -> 102` | many output channels | 0.0553 | 0.0830 | 1.50x | 162.9 | 231.0 | 0.9884 |
+| 102-channel backward decoder | `102 -> 1` | many predictor channels | 0.3239 | 3.1663 | 9.77x | 356.2 | 1147.7 | 0.9240 |
 
-Optional extras:
+The benchmark outcome is not "ffTRF is always faster." Short, simple,
+fixed-ridge problems can be similar or faster in mTRF. The added value of
+`ffTRF` is clearest when lag matrices become large, regularization grids are
+cross-validated, spectra are segmented, or the predictor side is
+high-dimensional.
 
-```bash
-pip install -e ".[test]"
-pip install -e ".[compare]"
-pip install -e ".[docs]"
-```
+## Examples and Docs
 
-For docs builds, prefer the locked Pixi environment:
+Useful entry points:
 
-```bash
-pixi run -e docs docs-build
-```
+- [Getting Started](https://weigla.github.io/ffTRF/getting-started/)
+- [Examples](https://weigla.github.io/ffTRF/examples/)
+- [API Reference](https://weigla.github.io/ffTRF/reference/)
+- [Choosing Segment Settings](https://weigla.github.io/ffTRF/guides/choosing-segment-settings/)
+- [Regularization and CV](https://weigla.github.io/ffTRF/guides/regularization/)
 
-For an existing Pixi project, you can link `ffTRF` directly from GitHub via
-Pixi's `pypi-dependencies`:
-
-```toml
-[pypi-dependencies]
-fftrf = { git = "https://github.com/weigla/ffTRF" }
-```
-
-Then run:
-
-```bash
-pixi install
-```
-
-If you want to pin a specific revision, add `rev = "<commit>"` to that table
-entry.
-
-## Quick Example
-
-```python
-import numpy as np
-
-from fftrf import TRF, inverse_variance_weights
-
-def simulate_trial(
-    rng: np.random.Generator,
-    *,
-    n_samples: int,
-    kernel: np.ndarray,
-    noise_scale: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    stimulus = rng.standard_normal((n_samples, 1))
-    response = np.convolve(stimulus[:, 0], kernel, mode="full")[:n_samples]
-    response += noise_scale * rng.standard_normal(n_samples)
-    return stimulus, response[:, np.newaxis]
-
-
-rng = np.random.default_rng(0)
-fs = 512
-kernel = np.zeros(60)
-kernel[6] = 1.0
-kernel[18] = -0.4
-kernel[32] = 0.2
-
-trials = [simulate_trial(rng, n_samples=4_096, kernel=kernel, noise_scale=0.05) for _ in range(6)]
-stimulus = [trial_stimulus for trial_stimulus, _ in trials]
-response = [trial_response for _, trial_response in trials]
-
-model = TRF(direction=1)
-cv_scores = model.train(
-    stimulus=stimulus[:-1],
-    response=response[:-1],
-    fs=fs,
-    tmin=0.0,
-    tmax=kernel.shape[0] / fs,
-    regularization=np.logspace(-6, 0, 7),
-    segment_duration=1.0,
-    overlap=0.5,
-    window="hann",
-    k="loo",
-    trial_weights=inverse_variance_weights(response[:-1]),
-)
-
-prediction = model.predict(stimulus=stimulus[-1])
-score = model.score(stimulus=stimulus[-1], response=response[-1])
-fig, ax = model.plot(input_index=0, output_index=0)
-```
-
-This example uses a known simulated kernel and keeps the last trial held out,
-so `score` is a real generalization check rather than a training-set-only
-sanity check.
-
-## Examples
-
-Runnable demos live in [`examples/`](examples/README.md). Useful entry points:
+Runnable examples live in [`examples/`](examples/README.md):
 
 ```bash
 python examples/example_single_trial_single_channel.py
 python examples/example_multi_trial_single_channel.py
-python examples/example_multitaper_estimator.py
-python examples/example_frequency_resolved_weights.py
-```
-
-Optional comparison tools:
-
-```bash
-pixi run -e compare compare-demo
+python examples/example_multifeature_multichannel.py
+pixi run -e compare python examples/example_mtrf_sample_eeg.py
 pixi run -e compare benchmark-demo
 ```
+
+## License
+
+`ffTRF` is distributed under the BSD 3-Clause License.
