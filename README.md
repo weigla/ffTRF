@@ -2,8 +2,8 @@
 
 `ffTRF` is a Python toolbox for fitting temporal response functions (TRFs) and
 related linear deconvolution models in the frequency domain. It is designed for
-scientists who work with continuous stimulus-response data, for example speech
-features and EEG, and want a workflow that feels familiar if they have used
+users that work with continuous stimulus-response data, for example speech
+features and MEG/EEG, and want a workflow that feels familiar if they have used e.g.
 `mTRFpy` or other lag-matrix TRF tools.
 
 The main public API is centered on `fftrf.TRF`. It supports forward encoding
@@ -98,7 +98,7 @@ fig, ax = model.plot(input_index=0, output_index=0)
 
 For a backward decoder, use `TRF(direction=-1)`. As in `mTRF`, backward fitting
 reverses the requested lag samples: a user-facing request such as
-`tmin=0.0, tmax=0.4` stores physical decoder lags ending at zero in
+`tmin=0.0, tmax=0.4` stores physical decoder lags from -0.4 ending at zero in
 `model.times`.
 
 ## Under the Hood
@@ -117,7 +117,7 @@ setting to a standard mTRF-style finite-lag comparison:
 model.train(..., segment_length=None, window=None)
 ```
 
-For noisy continuous data, it is often useful to estimate spectra from shorter
+For noisy continuous data (real world data), it is often useful to estimate spectra from shorter
 overlapping segments:
 
 ```python
@@ -146,11 +146,18 @@ single-lambda fits use a lower-memory aggregate spectral path.
 ## Real EEG Benchmark
 
 The primary practical benchmark uses the public speech-EEG sample distributed
-with the mTRF ecosystem:
+with the mTRF ecosystem. Reproduce the practical 2 s Hann ffTRF and mTRF rows
+and write a Markdown report containing runtime, peak RSS, and held-out accuracy:
 
 ```bash
-pixi run -e compare python examples/example_mtrf_sample_eeg.py
+pixi run -e compare python examples/benchmark_real_eeg.py
 ```
+
+The report is written to `artifacts/real_eeg_benchmark.md`. The first run
+downloads the public sample data into `artifacts/mtrf_data/`.
+Runtime and peak RSS depend on the machine and current system load; selected
+lambdas and held-out accuracy use seeded folds and should remain stable apart
+from small platform-dependent numerical differences.
 
 The dataset contains 10 twelve-second segments sampled at 128 Hz. The benchmark
 uses seven segments for training and cross-validation and three held-out
@@ -186,7 +193,9 @@ Interpretation:
 
 For this EEG example, 2-second Hann-windowed segments with 50% overlap are more
 useful practical `ffTRF` settings. They change the spectral estimator, so these
-rows are not strict solver-equivalence claims, but they limit the amount of frequency bins that are created in the background and additionaly help with this kind of continuous noisy data.
+rows are not strict solver-equivalence claims, but they limit the number of
+frequency bins created internally and additionally help with this kind of
+continuous noisy data.
 
 | Model | Configuration | Lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -197,57 +206,19 @@ rows are not strict solver-equivalence claims, but they limit the amount of freq
 | Backward ffTRF | 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
 | Backward mTRF | finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
 
-Reproduce the practical forward run:
+For an interactive comparison with prediction plots, run:
 
 ```bash
 pixi run -e compare python examples/example_mtrf_sample_eeg.py \
-  --skip-backward \
   --forward-segment-duration 2.0 \
   --forward-overlap 0.5 \
-  --forward-window hann
-```
-
-Reproduce the practical backward run:
-
-```bash
-pixi run -e compare python examples/example_mtrf_sample_eeg.py \
+  --forward-window hann \
   --backward-segment-duration 2.0 \
   --backward-overlap 0.5 \
   --backward-window hann
 ```
 
-## Controlled Runtime Benchmark
-
-The synthetic benchmark in
-[`examples/benchmark_runtime.py`](examples/benchmark_runtime.py) compares
-`ffTRF` and `mTRF` on simulated data with known ground-truth kernels. These rows
-are useful because the expected kernel is known and the two methods can be
-checked for agreement.
-
-Regenerate the full report:
-
-```bash
-pixi run -e compare benchmark-demo
-```
-
-Selected rows from the current benchmark report:
-
-| Scenario | Shape | Why it matters | ffTRF fit (s) | mTRF fit (s) | Speedup | ffTRF RSS (MiB) | mTRF RSS (MiB) | Kernel r |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Long high-rate recording | `1 -> 1` | small fixed-ridge case where mTRF can remain competitive | 0.2926 | 0.2661 | 0.91x | 103.0 | 540.8 | 1.0000 |
-| Longer lag window | `1 -> 1` | lag matrix doubles in width | 0.1456 | 0.3466 | 2.38x | 100.5 | 543.4 | 1.0000 |
-| Cross-validated ridge | `1 -> 1` | spectra are reused across 8 lambdas and 4 folds | 0.1655 | 1.1971 | 7.23x | 105.7 | 367.9 | 1.0000 |
-| Segmented Hann estimate | `1 -> 1` | short overlapping spectra instead of whole-trial FFT | 0.0239 | 0.2906 | 12.14x | 100.2 | 539.3 | 1.0000 |
-| EEG-scale forward | `16 -> 102` | many output channels | 0.0553 | 0.0830 | 1.50x | 162.9 | 231.0 | 0.9884 |
-| 102-channel backward decoder | `102 -> 1` | many predictor channels | 0.3239 | 3.1663 | 9.77x | 356.2 | 1147.7 | 0.9240 |
-
-The benchmark outcome is not "ffTRF is always faster." Short, simple,
-fixed-ridge problems can be similar or faster in mTRF. The added value of
-`ffTRF` is clearest when lag matrices become large, regularization grids are
-cross-validated, spectra are segmented, or the predictor side is
-high-dimensional.
-
-## Examples and Docs
+## Docs
 
 Useful entry points:
 
@@ -257,15 +228,6 @@ Useful entry points:
 - [Choosing Segment Settings](https://weigla.github.io/ffTRF/guides/choosing-segment-settings/)
 - [Regularization and CV](https://weigla.github.io/ffTRF/guides/regularization/)
 
-Runnable examples live in [`examples/`](examples/README.md):
-
-```bash
-python examples/example_single_trial_single_channel.py
-python examples/example_multi_trial_single_channel.py
-python examples/example_multifeature_multichannel.py
-pixi run -e compare python examples/example_mtrf_sample_eeg.py
-pixi run -e compare benchmark-demo
-```
 
 ## License
 

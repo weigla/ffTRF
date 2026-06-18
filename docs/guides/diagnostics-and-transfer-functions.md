@@ -83,9 +83,13 @@ one output channel.
 
 The public EEG comparison example in the repository is a useful sanity check
 for these diagnostics because it puts the recovered kernels next to a
-time-domain reference implementation:
+time-domain reference implementation.
 
-![Real EEG comparison example](../images/examples/mtrf_sample_eeg_comparison.png)
+![Real EEG forward kernel comparison](../images/examples/real_eeg_forward_kernels.png)
+
+The same run also summarizes kernel agreement across channels and lag samples:
+
+![Real EEG kernel agreement summary](../images/examples/real_eeg_kernel_agreement.png)
 
 ## When to Use Which Tool
 

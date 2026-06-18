@@ -121,18 +121,18 @@ That has a few practical consequences:
 
 ## Example Gallery
 
-### Single-Trial Forward Model
+### Real EEG Forward Kernels
 
-![Single-trial forward model](images/examples/single_trial_single_channel.png)
+![Real EEG forward kernel comparison](images/examples/real_eeg_forward_kernels.png)
 
-### Multi-Trial Cross-Validation
+### Real EEG Frequency-Resolved Kernel
 
-![Multi-trial forward model](images/examples/multi_trial_single_channel.png)
+![Real EEG frequency-resolved weights](images/examples/real_eeg_frequency_resolved.png)
 
-### Frequency-Resolved Weights
+### Real EEG Backward Model
 
-![Frequency-resolved weights](images/examples/frequency_resolved_weights.png)
+![Real EEG backward model](images/examples/real_eeg_backward_model.png)
 
-### Real EEG Comparison
+### Kernel Agreement Summary
 
-![Real EEG comparison](images/examples/mtrf_sample_eeg_comparison.png)
+![Real EEG kernel agreement summary](images/examples/real_eeg_kernel_agreement.png)

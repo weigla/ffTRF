@@ -1,7 +1,7 @@
 # Examples
 
-This directory contains optional demo, comparison, and benchmarking code that
-is not part of the core `ffTRF` library API.
+This directory contains optional demo and comparison code that is not part of
+the core `ffTRF` library API.
 
 The main installable toolbox lives in:
 
@@ -12,7 +12,6 @@ The files here are intended for:
 - runnable usage examples for the main `TRF` API patterns
 - sanity checks against time-domain references
 - side-by-side comparisons with `mTRF`
-- runtime benchmarking
 - exploratory plotting for development and validation
 
 ## Example coverage
@@ -35,6 +34,13 @@ practical with `TRF`:
   Spectrogram-like frequency-resolved view of one recovered kernel, shown as both signed weights and Hilbert-envelope power.
 - `example_mtrf_sample_eeg.py`
   Optional real-data comparison against the public mTRF speech EEG sample, with `neg_mse`-based lambda selection and held-out Pearson reporting for both a forward benchmark and a backward compressed-envelope benchmark on the same split; the backward target uses a `p=0.4` broadband compression, and optional segmented Hann settings are available for practical forward and backward ffTRF runs.
+- `benchmark_real_eeg.py`
+  Reproduce the practical 2 s Hann ffTRF and finite-lag mTRF benchmark in
+  isolated processes and write runtime, peak RSS, and held-out accuracy to a
+  Markdown table.
+- `generate_documentation_figures.py`
+  Regenerate the real EEG documentation figures used in the README and
+  documentation site.
 - `example_backward_decoding.py`
   Backward model: multichannel responses used to reconstruct a single stimulus.
 - `example_bootstrap_confidence_interval.py`
@@ -74,13 +80,14 @@ Optional compare-environment example:
 
 ```bash
 pixi run -e compare python examples/example_mtrf_sample_eeg.py
+pixi run -e compare python examples/benchmark_real_eeg.py
+pixi run -e compare python examples/generate_documentation_figures.py
 ```
 
-Run the comparison demo with Pixi:
+Development-only synthetic checks:
 
 ```bash
 pixi run -e compare compare-demo
-pixi run -e compare benchmark-demo
 ```
 
 Or with pip:
@@ -88,5 +95,4 @@ Or with pip:
 ```bash
 pip install -e ".[compare]" mtrf
 python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show
-python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md
 ```

@@ -126,11 +126,6 @@ penalty vector internally. Cross-validation still reuses the same cached fold
 spectra and validation predictor FFTs, so the banded search stays much cheaper
 than rebuilding the full prediction path from scratch for every candidate.
 
-The example below shows how grouped predictors can produce visibly different
-kernel structure when each block receives its own regularization strength:
-
-![Banded regularization example](../images/examples/banded_regularization.png)
-
 ## Segment Choices Matter Too
 
 Regularization is not the only stability control. Segment settings matter as

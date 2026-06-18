@@ -24,9 +24,10 @@ fig, ax = model.plot_frequency_resolved_weights(
 This produces a frequency-by-lag map for one input/output pair while leaving
 the ordinary kernel available in `model.weights`.
 
-Example output from the bundled frequency-resolved workflow:
+In the real speech EEG example, this view highlights which lag/frequency
+regions of a fitted forward kernel carry most structure:
 
-![Frequency-resolved weights example](../images/examples/frequency_resolved_weights.png)
+![Real EEG frequency-resolved weights](../images/examples/real_eeg_frequency_resolved.png)
 
 ## What the Parameters Mean
 

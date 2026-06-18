@@ -20,13 +20,13 @@ example that matches their workflow.
 | `example_trial_weighting.py` | Inverse-variance trial weighting and weighted vs unweighted fits |
 | `example_save_and_load.py` | Serialization, deserialization, and impulse-response export |
 
-## Comparison and Benchmarking
+## Real EEG Comparison
 
 | Script | Use case |
 | --- | --- |
-| `compare_with_mtrf.py` | Synthetic kernel comparison against time-domain references |
 | `example_mtrf_sample_eeg.py` | Public speech-EEG comparison against `mTRF`, with `neg_mse` lambda selection and held-out Pearson reporting for a forward benchmark plus a backward compressed-envelope benchmark; optional 2 s Hann settings are available for practical ffTRF forward and backward runs |
-| `benchmark_runtime.py` | Runtime benchmark against `mTRF` under several scenarios |
+| `benchmark_real_eeg.py` | Reproduces the practical real-EEG ffTRF/mTRF benchmark and writes runtime, peak RSS, and held-out accuracy as Markdown |
+| `generate_documentation_figures.py` | Regenerates the real EEG documentation figures used throughout the docs |
 
 ## Which Example Should I Start With?
 
@@ -54,9 +54,9 @@ python examples/example_multitaper_estimator.py
 Optional comparison environment:
 
 ```bash
-pixi run -e compare compare-demo
-pixi run -e compare benchmark-demo
 pixi run -e compare python examples/example_mtrf_sample_eeg.py
+pixi run -e compare python examples/benchmark_real_eeg.py
+pixi run -e compare python examples/generate_documentation_figures.py
 ```
 
 ## Rendered Notebooks
@@ -83,10 +83,18 @@ When reading the examples, pay attention to:
 
 ## Gallery
 
-![Single-trial example](images/examples/single_trial_single_channel.png)
+### Real EEG Forward Kernels
 
-![Multifeature / multichannel example](images/examples/multifeature_multichannel_kernels.png)
+![Real EEG forward kernel comparison](images/examples/real_eeg_forward_kernels.png)
 
-![Multi-taper example](images/examples/multitaper_estimator.png)
+### Real EEG Frequency-Resolved Kernel
 
-![Real EEG comparison](images/examples/mtrf_sample_eeg_comparison.png)
+![Real EEG frequency-resolved weights](images/examples/real_eeg_frequency_resolved.png)
+
+### Real EEG Backward Model
+
+![Real EEG backward model](images/examples/real_eeg_backward_model.png)
+
+### Kernel Agreement Summary
+
+![Real EEG kernel agreement summary](images/examples/real_eeg_kernel_agreement.png)

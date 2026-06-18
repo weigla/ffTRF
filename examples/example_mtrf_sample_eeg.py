@@ -176,6 +176,44 @@ def build_parser() -> argparse.ArgumentParser:
 def current_process_peak_memory_mib() -> float:
     """Return the current-process peak RSS in MiB when available."""
 
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        get_current_process = ctypes.windll.kernel32.GetCurrentProcess
+        get_current_process.restype = wintypes.HANDLE
+        get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
+        get_process_memory_info.argtypes = (
+            wintypes.HANDLE,
+            ctypes.POINTER(ProcessMemoryCounters),
+            wintypes.DWORD,
+        )
+        get_process_memory_info.restype = wintypes.BOOL
+        success = get_process_memory_info(
+            get_current_process(),
+            ctypes.byref(counters),
+            counters.cb,
+        )
+        if not success:
+            return float("nan")
+        return float(counters.PeakWorkingSetSize) / (1024.0**2)
+
     try:
         import resource
     except ModuleNotFoundError:
@@ -351,9 +389,51 @@ def benchmark_worker(
 ) -> tuple[list[float], list[float]]:
     """Run isolated worker fits and return durations and peak RSS values."""
 
+    payloads = benchmark_worker_payloads(
+        method=method,
+        repeats=repeats,
+        warmup=warmup,
+        forward_segment_duration=forward_segment_duration,
+        forward_overlap=forward_overlap,
+        forward_window=forward_window,
+        backward_stop_seconds=backward_stop_seconds,
+        backward_regularization_min=backward_regularization_min,
+        backward_regularization_max=backward_regularization_max,
+        backward_regularization_count=backward_regularization_count,
+        backward_k_folds=backward_k_folds,
+        backward_segment_duration=backward_segment_duration,
+        backward_overlap=backward_overlap,
+        backward_window=backward_window,
+        backward_envelope_compression=backward_envelope_compression,
+    )
+    return (
+        [payload["duration_seconds"] for payload in payloads],
+        [payload["peak_memory_mib"] for payload in payloads],
+    )
+
+
+def benchmark_worker_payloads(
+    *,
+    method: str,
+    repeats: int,
+    warmup: int,
+    forward_segment_duration: float,
+    forward_overlap: float,
+    forward_window: str,
+    backward_stop_seconds: float,
+    backward_regularization_min: float,
+    backward_regularization_max: float,
+    backward_regularization_count: int,
+    backward_k_folds: int,
+    backward_segment_duration: float,
+    backward_overlap: float,
+    backward_window: str,
+    backward_envelope_compression: float,
+) -> list[dict[str, float]]:
+    """Run isolated fits and return their complete benchmark payloads."""
+
     script_path = Path(__file__).resolve()
-    durations = []
-    peak_memories = []
+    payloads = []
     for run_index in range(repeats + warmup):
         command = [
             sys.executable,
@@ -389,9 +469,8 @@ def benchmark_worker(
         output = check_output(command, text=True)
         payload = json.loads(output.strip().splitlines()[-1])
         if run_index >= warmup:
-            durations.append(float(payload["duration_seconds"]))
-            peak_memories.append(float(payload["peak_memory_mib"]))
-    return durations, peak_memories
+            payloads.append({key: float(value) for key, value in payload.items()})
+    return payloads
 
 
 def run_worker_once(
@@ -419,6 +498,12 @@ def run_worker_once(
     backward_segment_duration = float(args.backward_segment_duration)
     backward_window = None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
 
+    if toolbox_name == "mtrf":
+        # Keep optional dependency import and plotting-cache initialization out
+        # of the fit-only runtime measurement.
+        from mtrf import model as _mtrf_model  # noqa: F401
+        from mtrf import stats as _mtrf_stats  # noqa: F401
+
     start = perf_counter()
     if toolbox_name == "fftrf":
         is_forward = direction == "forward"
@@ -438,7 +523,7 @@ def run_worker_once(
             if is_forward and forward_segment_duration <= 0.0
             else (forward_window if is_forward else backward_window)
         )
-        fit_fftrf(
+        model, _ = fit_fftrf(
             setup.train_stimulus if direction == "forward" else setup.backward_train_stimulus,
             setup.train_response,
             fs=setup.fs,
@@ -458,7 +543,7 @@ def run_worker_once(
             detrend=None,
         )
     else:
-        fit_mtrf(
+        model, _ = fit_mtrf(
             setup.train_stimulus if direction == "forward" else setup.backward_train_stimulus,
             setup.train_response,
             fs=setup.fs,
@@ -474,9 +559,35 @@ def run_worker_once(
             direction=1 if direction == "forward" else -1,
         )
     duration = perf_counter() - start
+    peak_memory_mib = current_process_peak_memory_mib()
+
+    if direction == "forward":
+        prediction, _ = model.predict(
+            stimulus=setup.test_stimulus,
+            response=setup.test_response,
+            average=False,
+        )
+        scores = feature_correlations(
+            observed_trials=setup.test_response,
+            predicted_trials=prediction,
+        )
+    else:
+        prediction, _ = model.predict(
+            stimulus=setup.backward_test_stimulus,
+            response=setup.test_response,
+            average=False,
+        )
+        scores = trial_correlations(
+            observed_trials=setup.backward_test_stimulus,
+            predicted_trials=prediction,
+        )
+
     return {
         "duration_seconds": duration,
-        "peak_memory_mib": current_process_peak_memory_mib(),
+        "peak_memory_mib": peak_memory_mib,
+        "regularization": float(model.regularization),
+        "mean_correlation": float(np.mean(scores)),
+        "median_correlation": float(np.median(scores)),
     }
 
 

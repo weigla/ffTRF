@@ -101,10 +101,6 @@ fig, ax = model.plot(
 )
 ```
 
-The plot below is generated from the exact seeded example above:
-
-![Getting started example output](images/examples/getting_started_first_model.png)
-
 ## What This Example Is Doing
 
 - `stimulus` and `response` are lists of arrays, so the fit runs in

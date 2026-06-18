@@ -18,7 +18,7 @@ pixi run -e test test
 pixi run -e docs docs-build
 pixi run -e docs docs-serve
 pixi run -e compare compare-demo
-pixi run -e compare benchmark-demo
+pixi run -e compare real-eeg-benchmark
 ```
 
 For API behavior changes, the usual check is:

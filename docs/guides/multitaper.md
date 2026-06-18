@@ -33,10 +33,6 @@ scores = model.train_multitaper(
 )
 ```
 
-Representative lag-domain output from the bundled multi-taper example:
-
-![Multitaper estimator example](../images/examples/multitaper_estimator.png)
-
 ## Equivalent Low-Level Form
 
 ```python
@@ -74,9 +70,9 @@ Larger `time_bandwidth` values:
 `window` must stay `None` in multi-taper mode because the DPSS tapers already
 define the segment weighting.
 
-The stored diagnostics from a multi-taper fit can also be inspected visually:
-
-![Multitaper diagnostics example](../images/examples/multitaper_diagnostics.png)
+The stored diagnostics from a multi-taper fit can also be inspected visually
+with the same transfer-function and cross-spectral plotting helpers used after
+a standard fit.
 
 ## Practical Advice
 
