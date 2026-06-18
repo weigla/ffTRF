@@ -25,6 +25,7 @@ Documentation = "https://weigla.github.io/ffTRF/"
 
 [project.optional-dependencies]
 test = [
+  "matplotlib>=3.8",
   "pytest>=9",
 ]
 compare = [
@@ -57,6 +58,9 @@ scipy = ">=1.12"
 
 [tool.pixi.pypi-dependencies]
 fftrf = { path = ".", editable = true }
+
+[tool.pixi.feature.tests.dependencies]
+matplotlib = ">=3.8"
 
 [tool.pixi.feature.tests.pypi-dependencies]
 pytest = ">=9"
