@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.metadata import version
 from pathlib import Path
 
 import fftrf
@@ -7,6 +8,11 @@ import numpy as np
 import pytest
 
 from fftrf import PermutationTestResult, TRF
+
+
+def test_top_level_api_exposes_package_version() -> None:
+    assert fftrf.__version__ == version("fftrf")
+    assert "__version__" in fftrf.__all__
 
 
 def _simulate_trials(

@@ -12,7 +12,19 @@ description = "ffTRF: frequency-domain temporal response function and deconvolut
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.15"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+]
 dependencies = [
   "numpy>=1.26",
   "scipy>=1.12",
@@ -27,6 +39,7 @@ Documentation = "https://weigla.github.io/ffTRF/"
 test = [
   "matplotlib>=3.8",
   "pytest>=9",
+  "pytest-cov>=6",
 ]
 compare = [
   "matplotlib>=3.8",
@@ -47,12 +60,20 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.pixi.project]
+[tool.coverage.run]
+branch = true
+source = ["fftrf"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
 
 [tool.pixi.dependencies]
-python = ">=3.10,<3.14"
+python = ">=3.10,<3.15"
 numpy = ">=1.26"
 scipy = ">=1.12"
 
@@ -64,6 +85,7 @@ matplotlib = ">=3.8"
 
 [tool.pixi.feature.tests.pypi-dependencies]
 pytest = ">=9"
+pytest-cov = ">=6"
 
 [tool.pixi.feature.comparison.dependencies]
 matplotlib = ">=3.8"
@@ -87,6 +109,7 @@ docs = { features = ["docs-site"], solve-group = "default" }
 
 [tool.pixi.tasks]
 test = "python -m pytest -q"
+coverage = "python -m pytest -q --cov=fftrf --cov-branch --cov-report=term-missing --cov-report=xml"
 import-check = "python -c \"import fftrf; print(fftrf.TRF.__name__)\""
 compare-demo = "python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show"
 benchmark-demo = "python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md"

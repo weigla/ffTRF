@@ -6,9 +6,23 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   tests-and-smoke:
+    name: tests and examples (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+          - "3.13"
+          - "3.14"
     env:
       MPLBACKEND: Agg
       MPLCONFIGDIR: /tmp/matplotlib
@@ -20,22 +34,42 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
-      - name: Install test and plotting dependencies
+      - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[test]" "matplotlib>=3.8"
+          python -m pip install -e ".[test]"
 
       - name: Run test suite
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=fftrf --cov-branch --cov-report=term-missing --cov-report=xml
 
-      - name: Smoke test core examples
+      - name: Smoke test examples
         run: |
-          python examples/example_single_trial_single_channel.py
-          python examples/example_multi_trial_single_channel.py
-          python examples/example_backward_decoding.py
-          python examples/example_save_and_load.py
+          for example in \
+            examples/example_single_trial_single_channel.py \
+            examples/example_multi_trial_single_channel.py \
+            examples/example_multifeature_multichannel.py \
+            examples/example_banded_regularization.py \
+            examples/example_multitaper_estimator.py \
+            examples/example_frequency_resolved_weights.py \
+            examples/example_backward_decoding.py \
+            examples/example_bootstrap_confidence_interval.py \
+            examples/example_trial_weighting.py \
+            examples/example_save_and_load.py
+          do
+            python "$example"
+          done
+
+      - name: Upload coverage to Coveralls
+        if: github.event_name == 'push' && matrix.python-version == '3.14'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.xml
+          format: cobertura
 
   docs-build:
     runs-on: ubuntu-latest
