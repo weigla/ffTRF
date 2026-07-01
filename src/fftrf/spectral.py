@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 import numpy as np
 from scipy.fft import next_fast_len
@@ -202,7 +202,7 @@ def _build_spectral_cache(
         resolved_time_bandwidth = None
         resolved_n_tapers = None
 
-    for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials)):
+    for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials, strict=True)):
         stored_trial_index = 0 if aggregate_only else trial_index
         trial_weight = 1.0 if normalized_trial_weights is None else float(normalized_trial_weights[trial_index])
         segments = list(

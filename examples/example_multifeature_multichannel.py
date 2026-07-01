@@ -6,14 +6,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
-from fftrf import TRF
-
 from simulated_data import (
     build_multifeature_multichannel_dataset,
     finalize_figure,
     require_matplotlib,
 )
+
+from fftrf import TRF
 
 KERNEL_OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel_kernels.png")
 PREDICTION_OUTPUT_PATH = Path("artifacts/examples/multifeature_multichannel_predictions.png")

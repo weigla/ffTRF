@@ -6,14 +6,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
-from fftrf import TRF, inverse_variance_weights, r2_score
-
 from simulated_data import (
     build_multi_trial_single_channel_dataset,
     finalize_figure,
     require_matplotlib,
 )
+
+from fftrf import TRF, inverse_variance_weights, r2_score
 
 OUTPUT_PATH = Path("artifacts/examples/multi_trial_single_channel.png")
 

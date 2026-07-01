@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
-from typing import Sequence
 import warnings
+from collections.abc import Sequence
+from pathlib import Path
+
+import numpy as np
+import pytest
+from scipy.signal import fftconvolve
 
 import fftrf
 import fftrf.estimator as estimator_module
 import fftrf.prediction as prediction_module
 import fftrf.spectral as spectral_module
-import numpy as np
-import pytest
-from scipy.signal import fftconvolve
-
 from fftrf import (
-    FrequencyResolvedWeights,
     TRF,
+    FrequencyResolvedWeights,
     TimeFrequencyPower,
     available_metrics,
     explained_variance_score,

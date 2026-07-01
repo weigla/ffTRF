@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "ffTRF"
+version: 0.1.0rc
+license: "BSD-3-Clause"
+type: software
+abstract: "A simple Toolbox to compute Temporal Response Functions using deconvolution in the Frequency Domain"
+authors:
+  - given-names: Alexander
+    family-names: Weigl
+    affiliation: University of Salzburg
+    orcid: "https://orcid.org/0009-0006-8435-5846"
+  - given-names: Fabian
+    family-names: Schmidt
+    affiliation: University of Salzburg
+    orcid: "https://orcid.org/0000-0002-9839-1614"
+  - given-names: Nathan
+    family-names: Weisz
+    affiliation: University of Salzburg
+    orcid: "https://orcid.org/0000-0001-7816-0037"
+keywords:
+  - cognitive neuroscience
+  - neuroscience
+  - signal processing
+  - time-frequency analysis
+  - deconvolution
+  - temporal response function
+  - EEG
+  - MEG

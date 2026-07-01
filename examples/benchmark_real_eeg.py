@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import platform
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-import platform
 from statistics import median
 
 from example_mtrf_sample_eeg import benchmark_worker_payloads
-
 
 DEFAULT_OUTPUT = Path("artifacts/real_eeg_benchmark.md")
 SEGMENT_DURATION_SECONDS = 2.0

@@ -6,14 +6,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
-from fftrf import TRF
-
 from simulated_data import (
     build_banded_regularization_dataset,
     finalize_figure,
     require_matplotlib,
 )
+
+from fftrf import TRF
 
 OUTPUT_PATH = Path("artifacts/examples/banded_regularization.png")
 

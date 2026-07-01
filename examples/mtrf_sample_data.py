@@ -63,7 +63,7 @@ def load_sample_data(
     fs = int(np.asarray(data["samplerate"]).squeeze())
 
     if normalize:
-        for index, (x_trial, y_trial) in enumerate(zip(stimulus, response)):
+        for index, (x_trial, y_trial) in enumerate(zip(stimulus, response, strict=True)):
             stimulus[index] = _zscore_columns(x_trial)
             response[index] = _zscore_columns(y_trial)
 

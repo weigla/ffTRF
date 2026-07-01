@@ -1,13 +1,14 @@
-from importlib.metadata import PackageNotFoundError, version as _metadata_version
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 
 from .model import (
+    TRF,
     CrossSpectralDiagnostics,
     FrequencyResolvedWeights,
     PermutationTestResult,
-    TRF,
-    TRFDiagnostics,
     TimeFrequencyPower,
     TransferFunctionComponents,
+    TRFDiagnostics,
     available_metrics,
     explained_variance_score,
     neg_mse,
@@ -20,7 +21,7 @@ from .utils import suggest_segment_settings
 try:
     __version__ = _metadata_version("fftrf")
 except PackageNotFoundError:  # pragma: no cover - used only from an uninstalled source tree
-    __version__ = "0.1.0"
+    __version__ = "0.1.0rc1"
 
 __all__ = [
     "CrossSpectralDiagnostics",

@@ -4,10 +4,10 @@
 from __future__ import annotations
 
 from .estimator import (
+    _USE_STORED_TRIAL_WEIGHTS,
     TRF,
     RegularizationSpec,
     SpectralMethod,
-    _USE_STORED_TRIAL_WEIGHTS,
 )
 from .metrics import (
     MetricSpec,
@@ -31,24 +31,23 @@ from .results import (
     CrossSpectralDiagnostics,
     FrequencyResolvedWeights,
     PermutationTestResult,
-    TRFDiagnostics,
     TimeFrequencyPower,
     TransferFunctionComponents,
+    TRFDiagnostics,
 )
 from .spectral import (
-    _ScalarRidgeDecomposition,
-    _SpectralCache,
     _aggregate_cached_spectra,
     _build_spectral_cache,
     _prepare_scalar_ridge_decomposition,
     _scalar_regularization_grid,
     _scalar_regularization_value,
+    _ScalarRidgeDecomposition,
     _solve_scalar_ridge_from_decomposition,
     _solve_transfer_function,
+    _SpectralCache,
     _validate_spectral_method,
 )
 from .utils import (
-    _SimpleProgressBar,
     _aggregate_metric,
     _build_frequency_filterbank,
     _check_trial_lengths,
@@ -66,16 +65,17 @@ from .utils import (
     _resolve_frequency_weight_value_mode,
     _resolve_k_folds,
     _resolve_n_jobs,
+    _resolve_phase_unit,
     _resolve_raw_trial_weights,
     _resolve_regularization_candidates,
     _resolve_segment_length,
-    _resolve_phase_unit,
+    _SimpleProgressBar,
     _single_candidate_cv_requested,
     _smallest_positive_frequency,
-    suggest_segment_settings,
     _validate_average_arg,
     _validate_bands,
     _warn_if_cv_arguments_are_unused,
+    suggest_segment_settings,
 )
 
 TRF.__module__ = __name__

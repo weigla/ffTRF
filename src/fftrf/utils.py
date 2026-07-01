@@ -3,12 +3,12 @@
 
 from __future__ import annotations
 
-from itertools import product
 import os
 import sys
-from threading import Lock
-from typing import Sequence
 import warnings
+from collections.abc import Sequence
+from itertools import product
+from threading import Lock
 
 import numpy as np
 
@@ -77,7 +77,7 @@ def _coerce_trials(
 def _check_trial_lengths(a_trials: Sequence[np.ndarray], b_trials: Sequence[np.ndarray]) -> None:
     if len(a_trials) != len(b_trials):
         raise ValueError("Stimulus and response must contain the same number of trials.")
-    for index, (a_trial, b_trial) in enumerate(zip(a_trials, b_trials)):
+    for index, (a_trial, b_trial) in enumerate(zip(a_trials, b_trials, strict=True)):
         if a_trial.shape[0] != b_trial.shape[0]:
             raise ValueError(
                 f"Trial {index} has mismatched lengths: "
@@ -497,7 +497,7 @@ def _expand_feature_regularization(
                 _coerce_nonnegative_float(coefficient, name="regularization"),
                 dtype=float,
             )
-            for coefficient, band_size in zip(coefficients, bands)
+            for coefficient, band_size in zip(coefficients, bands, strict=True)
         ]
     )
 

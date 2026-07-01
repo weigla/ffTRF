@@ -106,7 +106,7 @@ def time_domain_ridge_kernel(
 
     x_blocks = []
     y_blocks = []
-    for x_trial, y_trial in zip(stimulus, response):
+    for x_trial, y_trial in zip(stimulus, response, strict=True):
         x_blocks.append(_lagged_design_matrix(x_trial, lags))
         y_blocks.append(y_trial)
 

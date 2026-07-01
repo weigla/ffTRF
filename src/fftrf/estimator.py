@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import pickle
-from pathlib import Path
 import random
-from typing import Callable, Sequence
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import numpy as np
 from scipy.signal import hilbert
 
-from .metrics import MetricSpec, pearsonr, _resolve_metric
+from .metrics import MetricSpec, _resolve_metric, pearsonr
 from .prediction import (
     _aggregate_null_scores,
     _build_permutation_specs,
@@ -30,32 +30,28 @@ from .prediction import (
     _validate_confidence_level,
 )
 from .results import (
-    PermutationTestResult,
     FrequencyResolvedWeights,
-    TRFDiagnostics,
+    PermutationTestResult,
     TimeFrequencyPower,
     TransferFunctionComponents,
+    TRFDiagnostics,
 )
 from .spectral import (
     SpectralMethod,
-    _SpectralCache,
     _aggregate_cached_spectra,
     _build_spectral_cache,
-    _prepare_scalar_ridge_decomposition,
     _resolve_multitaper_parameters,
-    _scalar_regularization_grid,
     _solve_transfer_function,
+    _SpectralCache,
     _validate_spectral_method,
 )
 from .utils import (
-    _SimpleProgressBar,
     _aggregate_metric,
     _build_frequency_filterbank,
     _check_trial_lengths,
     _coerce_trials,
     _copy_value,
     _group_delay_values,
-    _normalize_trial_weights,
     _phase_values,
     _resolve_frequency_weight_value_mode,
     _resolve_k_folds,
@@ -63,6 +59,7 @@ from .utils import (
     _resolve_raw_trial_weights,
     _resolve_regularization_candidates,
     _resolve_segment_length,
+    _SimpleProgressBar,
     _single_candidate_cv_requested,
     _validate_bands,
     _warn_if_cv_arguments_are_unused,
@@ -2648,7 +2645,7 @@ class TRF:
         if not hasattr(self, "_fit_config"):
             self._fit_config = None
 
-    def copy(self) -> "TRF":
+    def copy(self) -> TRF:
         """Return a copy of the estimator and all learned arrays.
 
         Returns

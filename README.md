@@ -1,4 +1,9 @@
 # ffTRF
+[![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-orange.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![Repo
+size](https://img.shields.io/github/repo-size/weigla/ffTRF)](https://github.com/weigla/ffTRF)
+[![Coverage Status](https://coveralls.io/repos/github/weigla/ffTRF/badge.svg?branch=main)](https://coveralls.io/github/weigla/ffTRF?branch=main)
 
 `ffTRF` is a Python toolbox for fitting temporal response functions (TRFs) and
 related linear deconvolution models in the frequency domain. It is designed for
@@ -108,7 +113,7 @@ Instead of constructing an explicit lag matrix, `ffTRF`:
 1. estimates predictor auto-spectra and predictor-target cross-spectra,
 2. solves a ridge-regularized transfer function at each frequency, and
 3. converts the transfer function into a lag-domain impulse response over the
-   requested `[tmin, tmax)` interval.
+   requested `tmin, tmax)` interval.
 
 By default, each trial is treated as one FFT segment. That is the closest
 setting to a standard mTRF-style finite-lag comparison:
@@ -187,7 +192,7 @@ Interpretation:
   predictor side has 128 EEG channels; here `ffTRF` is much faster and uses less
   memory.
 - The matched whole-trial backward `ffTRF` fit is not the most accurate
-  practical setting for this small noisy sample.
+  practical setting for this small noisy sample, because cross spectra are estimated from the whole trial. Therefore `ffTRF`tends to overregularize and shows worse prediction accuracy. The more practical appraoch is shown below.
 
 ### Practical 2 s Hann Settings
 
@@ -205,6 +210,8 @@ continuous noisy data.
 | Backward ffTRF | whole trial / rectangular | 1000000 | 0.0469 | 0.0370 | 15.0707 | 3222.3 |
 | Backward ffTRF | 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
 | Backward mTRF | finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
+
+- Using these settings not only helps with computation time and memory-usage, but also improves the accuracy of the resulting kernel.
 
 For an interactive comparison with prediction plots, run:
 

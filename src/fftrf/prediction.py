@@ -3,21 +3,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 import numpy as np
 from scipy.fft import next_fast_len
 
 from .spectral import (
-    _SpectralCache,
     _aggregate_cached_spectra,
     _prepare_scalar_ridge_decomposition,
     _scalar_regularization_grid,
     _solve_transfer_function,
+    _SpectralCache,
 )
 from .utils import _aggregate_metric, _resolve_n_jobs
+
 
 @dataclass(slots=True)
 class _PreparedPredictionTrial:
@@ -485,7 +486,12 @@ def _score_prediction_trials(
     if len(target_trials) != len(prediction_trials):
         raise ValueError("target_trials and prediction_trials must have the same length.")
     return np.mean(
-        np.vstack([metric(target, prediction) for target, prediction in zip(target_trials, prediction_trials)]),
+        np.vstack(
+            [
+                metric(target, prediction)
+                for target, prediction in zip(target_trials, prediction_trials, strict=True)
+            ]
+        ),
         axis=0,
     )
 

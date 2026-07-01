@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "fftrf"
-version = "0.1.0"
+version = "0.1.0rc1"
 authors = [
   { name="Alexander Weigl", email="alexander.weigl@plus.ac.at" },
 ]
@@ -41,6 +41,9 @@ test = [
   "pytest>=9",
   "pytest-cov>=6",
 ]
+lint = [
+  "ruff>=0.8",
+]
 compare = [
   "matplotlib>=3.8",
   "mtrf>=2.0",
@@ -52,10 +55,25 @@ docs = [
   "mkdocs-material>=9.5",
   "mkdocstrings>=0.28",
   "mkdocstrings-python>=1.12",
+  "pygments<2.20",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/fftrf"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/fftrf",
+  "/tests",
+  "/docs",
+  "/examples",
+  "/pyproject.toml",
+  "/pixi.lock",
+  "/mkdocs.yml",
+  "/README.md",
+  "/LICENSE",
+  "/CITATION.CFF",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -67,6 +85,26 @@ source = ["fftrf"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+
+[tool.ruff]
+extend-exclude = ["docs/notebooks"]
+line-length = 99
+src = ["src", "tests"]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "E4",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "UP",
+  "B",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"src/fftrf/model.py" = ["F401"]
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
@@ -87,6 +125,15 @@ matplotlib = ">=3.8"
 pytest = ">=9"
 pytest-cov = ">=6"
 
+[tool.pixi.feature.lint.dependencies]
+ruff = ">=0.8"
+
+[tool.pixi.feature.package.dependencies]
+hatchling = ">=1.26"
+pip = ">=24"
+python-build = ">=1.2"
+twine = ">=6"
+
 [tool.pixi.feature.comparison.dependencies]
 matplotlib = ">=3.8"
 
@@ -100,16 +147,22 @@ mkdocs-jupyter = ">=0.25"
 mkdocs-material = ">=9.5"
 mkdocstrings = ">=0.28"
 mkdocstrings-python = ">=1.12"
+pygments = "<2.20"
 
 [tool.pixi.environments]
 default = { features = [], solve-group = "default" }
 test = { features = ["tests"], solve-group = "default" }
+lint = { features = ["lint"], solve-group = "default" }
+package = { features = ["package"], solve-group = "package" }
 compare = { features = ["comparison"], solve-group = "default" }
 docs = { features = ["docs-site"], solve-group = "default" }
 
 [tool.pixi.tasks]
 test = "python -m pytest -q"
 coverage = "python -m pytest -q --cov=fftrf --cov-branch --cov-report=term-missing --cov-report=xml"
+lint = "ruff check ."
+package-build = "python -m build --no-isolation"
+package-check = "python -m twine check dist/*"
 import-check = "python -c \"import fftrf; print(fftrf.TRF.__name__)\""
 compare-demo = "python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show"
 benchmark-demo = "python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md"

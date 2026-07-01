@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-import sys
 
 import numpy as np
 
@@ -17,20 +17,19 @@ if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
 from example_mtrf_sample_eeg import (  # noqa: E402
+    _coerce_trial_list,
+    _ensure_2d_column_array,
     feature_correlations,
     fit_fftrf,
     fit_mtrf,
     load_comparison_setup,
     trial_correlations,
-    _coerce_trial_list,
-    _ensure_2d_column_array,
 )
 from mtrf_sample_data import exact_lag_window_seconds  # noqa: E402
 from simulated_data import (  # noqa: E402
     finalize_figure,
     require_matplotlib,
 )
-
 
 DOC_IMAGE_DIR = ROOT / "docs" / "images" / "examples"
 ARTIFACT_IMAGE_DIR = ROOT / "artifacts" / "examples" / "documentation"

@@ -16,17 +16,17 @@ documentation or manuscripts.
 from __future__ import annotations
 
 import argparse
+import json
+import platform
+import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import metadata
-import json
 from pathlib import Path
 from statistics import median
 from subprocess import DEVNULL, CalledProcessError, check_output
 from time import perf_counter
-import platform
-import sys
-from typing import Sequence
 
 import numpy as np
 
@@ -36,7 +36,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
-from comparison_utils import default_kernel
+from comparison_utils import default_kernel  # noqa: E402
 
 _MTRF_TRF = None
 

@@ -5,7 +5,9 @@
 The repository is organized around a small set of Pixi environments:
 
 - `default`: editable package install plus core runtime dependencies
-- `test`: adds `pytest`
+- `test`: adds `matplotlib`, `pytest`, and coverage tooling
+- `lint`: adds Ruff
+- `package`: adds build and metadata-checking tools for local distribution checks
 - `compare`: adds `matplotlib` and `mtrf`
 - `docs`: adds MkDocs and API-reference tooling
 
@@ -14,7 +16,10 @@ The repository is organized around a small set of Pixi environments:
 ```bash
 pixi install
 pixi run import-check
+pixi run -e lint lint
 pixi run -e test test
+pixi run -e package package-build
+pixi run -e package package-check
 pixi run -e docs docs-build
 pixi run -e docs docs-serve
 pixi run -e compare compare-demo
@@ -34,6 +39,7 @@ the generated reference pages.
 ```bash
 pip install -e .
 pip install -e ".[test]"
+pip install -e ".[lint]"
 pip install -e ".[docs]"
 ```
 

@@ -6,14 +6,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
-from fftrf import TRF
-
 from simulated_data import (
     build_single_trial_single_channel_dataset,
     finalize_figure,
     require_matplotlib,
 )
+
+from fftrf import TRF
 
 MODEL_PATH = Path("artifacts/examples/frequency_trf_model.pkl")
 OUTPUT_PATH = Path("artifacts/examples/save_and_load.png")

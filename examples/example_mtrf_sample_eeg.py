@@ -4,20 +4,19 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 from statistics import median
 from subprocess import check_output
-import sys
 from time import perf_counter
 
 import numpy as np
-
-from fftrf import TRF, pearsonr
-
 from mtrf_sample_data import exact_lag_window_seconds, load_sample_data
 from simulated_data import finalize_figure, require_matplotlib
+
+from fftrf import TRF, pearsonr
 
 OUTPUT_PATH = Path("artifacts/examples/mtrf_sample_eeg_comparison.png")
 SELECTION_METRIC_NAME = "neg_mse"

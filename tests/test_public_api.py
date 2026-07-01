@@ -3,11 +3,11 @@ from __future__ import annotations
 from importlib.metadata import version
 from pathlib import Path
 
-import fftrf
 import numpy as np
 import pytest
 
-from fftrf import PermutationTestResult, TRF
+import fftrf
+from fftrf import TRF, PermutationTestResult
 
 
 def test_top_level_api_exposes_package_version() -> None:

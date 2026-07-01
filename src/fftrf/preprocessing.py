@@ -11,8 +11,8 @@ predictor and response signals for TRF analysis:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from fractions import Fraction
-from typing import Sequence
 
 import numpy as np
 from scipy.signal import resample_poly
