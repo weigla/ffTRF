@@ -1,8 +1,10 @@
 cff-version: 1.2.0
 title: "ffTRF"
-version: 0.1.0rc
+version: 0.1.0
 license: "BSD-3-Clause"
 type: software
+repository-code: "https://github.com/weigla/ffTRF"
+url: "https://weigla.github.io/ffTRF/"
 abstract: "A simple Toolbox to compute Temporal Response Functions using deconvolution in the Frequency Domain"
 authors:
   - given-names: Alexander

@@ -21,7 +21,7 @@ from .utils import suggest_segment_settings
 try:
     __version__ = _metadata_version("fftrf")
 except PackageNotFoundError:  # pragma: no cover - used only from an uninstalled source tree
-    __version__ = "0.1.0rc1"
+    __version__ = "0.1.0"
 
 __all__ = [
     "CrossSpectralDiagnostics",

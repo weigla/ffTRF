@@ -2878,8 +2878,8 @@ packages:
   - validictory ; extra == 'devel'
 - pypi: ./
   name: fftrf
-  version: 0.1.0rc1
-  sha256: 9ce08fda015eb51e694681ab1af9716ead61fe5823605e93a54dec7c327cc07a
+  version: 0.1.0
+  sha256: 199ddf9d8daa1561e06f90c91f1cbd93ef6ca76b84f57ba476e5e65b9250c301
   requires_dist:
   - numpy>=1.26
   - scipy>=1.12

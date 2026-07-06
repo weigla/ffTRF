@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fftrf"
-version = "0.1.0rc1"
+version = "0.1.0"
 authors = [
   { name="Alexander Weigl", email="alexander.weigl@plus.ac.at" },
 ]

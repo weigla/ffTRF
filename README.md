@@ -19,20 +19,28 @@ and plotting helpers.
 
 Full documentation: [weigla.github.io/ffTRF](https://weigla.github.io/ffTRF/)
 
+The whole Toolbox and its API is designed to work similar to mTRFpy:
+
+Bialas et al., (2023). mTRFpy: A Python package for temporal response function analysis. Journal of Open Source Software, 8(89), 5657, https://doi.org/10.21105/joss.05657
+
+The workflow behind it is loosely based on previous work from the Maddox-Lab:
+
+Tong Shan, Ross K. Maddox; Comparing methods for deriving the auditory brainstem response to continuous speech in human listeners. Imaging Neuroscience 2025; 3 IMAG.a.19. doi: https://doi.org/10.1162/IMAG.a.19
+
+Ross K. Maddox, Adrian K. C. Lee; Auditory Brainstem Responses to Continuous Natural Speech in Human Listeners. eNeuro 31 January 2018, 5 (1) ENEURO.0441-17.2018; DOI: https://doi.org/10.1523/ENEURO.0441-17.2018
+
+
+
 ## Why ffTRF?
 
 Traditional time-domain TRF estimators build an explicit lagged design matrix:
 each predictor is copied once per requested lag. That representation is direct
 and interpretable, but it can become large when recordings are long, sampling
-rates are high, lag windows are wide, regularization is cross-validated, or the
-predictor side has many channels.
+rates are high, lag windows are wide, or the predictor side has many channels.
 
-`ffTRF` fits the same kind of linear stimulus-response model from spectral
-sufficient statistics instead. In regimes where lag matrices become expensive,
-this can reduce memory use and, in many cases, runtime. The trade-off is that
-the spectral estimator matters: whole-trial spectra are the closest matched
-comparison to a standard finite-lag mTRF fit, while segmented/windowed spectra
-are often better practical settings for noisy continuous data.
+`ffTRF` estimates the same class of linear stimulus–response models as conventional time-domain mTRF approaches, but does so from frequency-domain sufficient statistics. Instead of forming an explicit lagged design matrix, the model is fitted from auto- and cross-spectral estimates of the stimulus and response.
+
+The main point here is that different spectral estimators emphasize different goals. If you are looking for the closest frequency-domain analogue of a standard finite-lag mTRF fit, whole-trial spectra are the way to go. For "real world data" (and especially in backward-models), segmented or windowed spectra are often preferable: by averaging spectral statistics across shorter segments, they can improve robustness to noise and nonstationarity, and in practice may produce kernels with higher predictive accuracy than conventional time-domain TRF estimates.
 
 ## Installation
 
@@ -42,27 +50,19 @@ For a released package:
 pip install fftrf
 ```
 
-For a local editable checkout:
+or if you use [Pixi](https://pixi.prefix.dev/latest/installation/#install-from-source):
 
 ```bash
-pip install -e .
+pixi add fftrf
 ```
 
-Optional extras:
-
-```bash
-pip install -e ".[compare]"  # mTRF comparisons and plotting
-pip install -e ".[test]"     # test suite
-pip install -e ".[docs]"     # documentation build
+alternatively you can point directly to this repo in you `pixi.toml`file:
+```toml
+[pypi-dependencies]
+ffTRF = { git = "https://github.com/weigla/ffTRF.git"}
 ```
-
-For reproducible development and benchmark runs, the repository uses Pixi:
-
-```bash
-pixi install
-pixi run import-check
-pixi run -e test test
-```
+Then run `pixi install`. If you want to pin a specific revision, add
+`rev = "<commit>"` to the dependency entry.
 
 ## Quick Start
 
@@ -213,29 +213,17 @@ continuous noisy data.
 
 - Using these settings not only helps with computation time and memory-usage, but also improves the accuracy of the resulting kernel.
 
-For an interactive comparison with prediction plots, run:
+If you want, you can run the benchmark on your own machine:
 
 ```bash
-pixi run -e compare python examples/example_mtrf_sample_eeg.py \
-  --forward-segment-duration 2.0 \
-  --forward-overlap 0.5 \
-  --forward-window hann \
-  --backward-segment-duration 2.0 \
-  --backward-overlap 0.5 \
-  --backward-window hann
+pixi run -e compare real-eeg-benchmark
 ```
-
-## Docs
-
-Useful entry points:
-
-- [Getting Started](https://weigla.github.io/ffTRF/getting-started/)
-- [Examples](https://weigla.github.io/ffTRF/examples/)
-- [API Reference](https://weigla.github.io/ffTRF/reference/)
-- [Choosing Segment Settings](https://weigla.github.io/ffTRF/guides/choosing-segment-settings/)
-- [Regularization and CV](https://weigla.github.io/ffTRF/guides/regularization/)
-
 
 ## License
 
 `ffTRF` is distributed under the BSD 3-Clause License.
+
+## AI usage disclosure
+This project uses AI-assisted development tools, including OpenAI Codex and OpenAI language models from version 4 onward through GPT-5.5. These tools were used to assist with generating code, composing tests, improving documentation, and reviewing code.
+
+All AI-generated or AI-assisted contributions were reviewed, validated, and - if necessary - edited by the project author before inclusion. The author remains responsible for the correctness, design decisions, and maintenance of the codebase.

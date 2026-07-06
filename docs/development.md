@@ -50,6 +50,17 @@ CI builds the documentation from the lockfile-backed toolchain:
 pixi run -e docs docs-build
 ```
 
+## Release Workflow
+
+TestPyPI publishing is manual through the `publish-testpypi` GitHub Actions
+workflow. Production PyPI publishing is triggered when a GitHub Release is
+published from a tag named `v<version>`, for example `v0.1.0`.
+
+The production workflow checks that the release tag matches
+`project.version` in `pyproject.toml` before building or uploading artifacts.
+Both TestPyPI and PyPI publishing use Trusted Publishing, so no PyPI API token
+is stored in the repository.
+
 ## Package Layout
 
 - `src/fftrf/estimator.py`: `TRF`
@@ -61,17 +72,3 @@ pixi run -e docs docs-build
 
 `src/fftrf/model.py` remains as a thin import surface inside the package, while
 the main implementation lives in the smaller submodules above.
-
-## Performance Notes
-
-Cross-validation performance relies on two different kinds of reuse:
-
-- `src/fftrf/spectral.py` caches per-trial spectral sufficient statistics so
-  folds and ridge candidates do not repeat FFT-based training statistics.
-- `src/fftrf/prediction.py` now caches validation-side predictor FFTs within
-  each fold, so repeated candidate scoring reuses the same transformed
-  predictors instead of recomputing one convolution per input/output kernel.
-
-That second optimization is especially relevant for larger CV grids and banded
-regularization, because it lowers scoring cost without changing any public API,
-fit result, or score value.

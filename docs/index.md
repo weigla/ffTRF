@@ -1,9 +1,7 @@
 # ffTRF
 
 `ffTRF` is a Python toolbox for fitting temporal response functions in the
-frequency domain. It is designed for continuous stimulus-response modeling
-without tying the workflow to one modality, one preprocessing stack, or one
-experimental paradigm.
+frequency domain. 
 
 The main estimator is `fftrf.TRF`. It supports:
 
@@ -15,7 +13,6 @@ The main estimator is `fftrf.TRF`. It supports:
 - time-domain kernel export for interpretation
 - bootstrap confidence intervals
 - permutation-based held-out score significance testing
-- optional stronger refit-based null-model significance testing
 - transfer-function and cross-spectral diagnostics
 - frequency-resolved lag-domain views of recovered kernels
 
@@ -71,14 +68,8 @@ Optional extras:
 ```bash
 pip install -e ".[test]"
 pip install -e ".[compare]"
-pip install -e ".[docs]"
 ```
 
-For docs builds, prefer the lockfile-backed Pixi command:
-
-```bash
-pixi run -e docs docs-build
-```
 
 ## What ffTRF Actually Fits
 
@@ -88,7 +79,7 @@ you request with `tmin` and `tmax`.
 
 That has a few practical consequences:
 
-- you do not need to build an explicit lag matrix yourself
+- no need to build an explicit lag matrix
 - fitting can reuse cached per-trial spectra across cross-validation folds
 - the same fitted model can be inspected in both lag-domain and
   frequency-domain forms
@@ -118,21 +109,3 @@ That has a few practical consequences:
 - [Notebooks](notebooks/getting-started/): rendered walk-throughs with the
   same API used in the example scripts
 - [Reference](reference/index.md): detailed function-by-function API
-
-## Example Gallery
-
-### Real EEG Forward Kernels
-
-![Real EEG forward kernel comparison](images/examples/real_eeg_forward_kernels.png)
-
-### Real EEG Frequency-Resolved Kernel
-
-![Real EEG frequency-resolved weights](images/examples/real_eeg_frequency_resolved.png)
-
-### Real EEG Backward Model
-
-![Real EEG backward model](images/examples/real_eeg_backward_model.png)
-
-### Kernel Agreement Summary
-
-![Real EEG kernel agreement summary](images/examples/real_eeg_kernel_agreement.png)

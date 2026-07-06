@@ -6,43 +6,23 @@ after fitting.
 
 ## Install
 
-Pixi is the most complete setup for contributors:
+For a released package:
 
 ```bash
-pixi install
-pixi run import-check
+pip install fftrf
 ```
 
-If you only want the package:
+or if you use [Pixi](https://pixi.prefix.dev/latest/installation/#install-from-source):
 
 ```bash
-pip install -e .
+pixi add fftrf
 ```
 
-If you want plotting, tests, comparison scripts, or docs tooling in a plain
-`pip` workflow, install the matching extras:
-
-```bash
-pip install -e ".[compare]"
-pip install -e ".[test]"
-pip install -e ".[docs]"
-```
-
-For documentation builds, the locked Pixi environment is the most reproducible
-option:
-
-```bash
-pixi run -e docs docs-build
-```
-
-For an existing Pixi project, you can link `ffTRF` directly from GitHub via
-Pixi's `pypi-dependencies`:
-
+alternatively you can point directly to this repo in you `pixi.toml`file:
 ```toml
 [pypi-dependencies]
-fftrf = { git = "https://github.com/weigla/ffTRF" }
+ffTRF = { git = "https://github.com/weigla/ffTRF.git"}
 ```
-
 Then run `pixi install`. If you want to pin a specific revision, add
 `rev = "<commit>"` to the dependency entry.
 
@@ -138,10 +118,10 @@ fig, ax = model.plot(
 
 After training, the most important attributes are:
 
-- `model.transfer_function`: complex frequency-domain solution
-- `model.frequencies`: frequency axis in Hz
 - `model.weights`: lag-domain kernel
 - `model.times`: lag axis in seconds
+- `model.transfer_function`: complex frequency-domain solution
+- `model.frequencies`: frequency axis in Hz
 - `model.regularization`: chosen ridge value or banded tuple
 - `model.regularization_candidates`: all evaluated regularization candidates
 

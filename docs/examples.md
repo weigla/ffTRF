@@ -2,8 +2,8 @@
 
 The repository ships runnable scripts under `examples/`. They are meant to be
 small, focused walkthroughs of the main API patterns. The descriptions below
-explain what each script is meant to teach so users can jump straight to the
-example that matches their workflow.
+explain what each script is meant to teach so you can jump straight to the
+example that matches your specific question or workflow.
 
 ## Core Examples
 
