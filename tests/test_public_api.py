@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -8,10 +7,11 @@ import pytest
 
 import fftrf
 from fftrf import TRF, PermutationTestResult
+from fftrf._version import __version__ as source_version
 
 
 def test_top_level_api_exposes_package_version() -> None:
-    assert fftrf.__version__ == version("fftrf")
+    assert fftrf.__version__ == source_version
     assert "__version__" in fftrf.__all__
 
 

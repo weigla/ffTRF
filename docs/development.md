@@ -18,6 +18,7 @@ pixi install
 pixi run import-check
 pixi run -e lint lint
 pixi run -e test test
+pixi run -e package hatch version
 pixi run -e package package-build
 pixi run -e package package-check
 pixi run -e docs docs-build
@@ -56,10 +57,20 @@ TestPyPI publishing is manual through the `publish-testpypi` GitHub Actions
 workflow. Production PyPI publishing is triggered when a GitHub Release is
 published from a tag named `v<version>`, for example `v0.1.0`.
 
-The production workflow checks that the release tag matches
-`project.version` in `pyproject.toml` before building or uploading artifacts.
-Both TestPyPI and PyPI publishing use Trusted Publishing, so no PyPI API token
-is stored in the repository.
+The package version is stored in `src/fftrf/_version.py` and managed with Hatch:
+
+```bash
+pixi run -e package hatch version
+pixi run -e package hatch version fix
+pixi run -e package hatch version minor
+pixi run -e package hatch version major
+```
+
+Hatch updates the version file but does not create a Git tag. Update
+`CITATION.CFF` to the same release version, then create and push the matching
+`v<version>` tag before publishing the GitHub Release. The production workflow
+checks that the release tag matches `hatch version` before building or
+uploading artifacts. Both TestPyPI and PyPI publishing use Trusted Publishing.
 
 ## Package Layout
 

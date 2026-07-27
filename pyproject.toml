@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fftrf"
-version = "0.1.0"
+dynamic = ["version"]
 authors = [
   { name="Alexander Weigl", email="alexander.weigl@plus.ac.at" },
 ]
@@ -58,6 +58,9 @@ docs = [
   "pygments<2.20",
 ]
 
+[tool.hatch.version]
+path = "src/fftrf/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/fftrf"]
 
@@ -73,6 +76,7 @@ include = [
   "/README.md",
   "/LICENSE",
   "/CITATION.CFF",
+  "/CONTRIBUTING.md",
 ]
 
 [tool.pytest.ini_options]
@@ -129,6 +133,7 @@ pytest-cov = ">=6"
 ruff = ">=0.8"
 
 [tool.pixi.feature.package.dependencies]
+hatch = ">=1.14"
 hatchling = ">=1.26"
 pip = ">=24"
 python-build = ">=1.2"

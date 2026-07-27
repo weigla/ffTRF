@@ -32,12 +32,13 @@ jobs:
         run: |
           pixi run -e package python - <<'PY'
           import os
-          import pathlib
+          import subprocess
           import sys
-          import tomllib
 
-          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-          version = pyproject["project"]["version"]
+          version = subprocess.check_output(
+              ["hatch", "version"],
+              text=True,
+          ).strip()
           expected_tag = f"v{version}"
           release_tag = os.environ["RELEASE_TAG"]
           if release_tag != expected_tag:

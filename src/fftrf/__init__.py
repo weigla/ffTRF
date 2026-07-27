@@ -1,6 +1,4 @@
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _metadata_version
-
+from ._version import __version__
 from .model import (
     TRF,
     CrossSpectralDiagnostics,
@@ -17,11 +15,6 @@ from .model import (
 )
 from .preprocessing import half_wave_rectify, inverse_variance_weights, resample_signal
 from .utils import suggest_segment_settings
-
-try:
-    __version__ = _metadata_version("fftrf")
-except PackageNotFoundError:  # pragma: no cover - used only from an uninstalled source tree
-    __version__ = "0.1.0"
 
 __all__ = [
     "CrossSpectralDiagnostics",
