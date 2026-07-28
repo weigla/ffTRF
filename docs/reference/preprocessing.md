@@ -8,11 +8,15 @@ TRF fitting.
 
 - split a waveform into positive and negative half-wave regressors
 - resample derived regressors to match the target sampling rate
-- compute simple inverse-variance trial weights for noisy multi-trial data
+- compute heuristic inverse-variance trial weights in controlled cases where
+  total variance is a defensible proxy for noise
 
 These helpers do not try to replace a full preprocessing pipeline. They are
 meant to cover the small but common operations that are convenient to keep next
-to the estimator API.
+to the estimator API. In particular, inverse-variance weighting is not a
+general data-quality estimator: genuine neural effects can change trial
+variance too. Compare it with an unweighted fit and prefer prespecified
+artifact or noise measures when available.
 
 ::: fftrf.half_wave_rectify
 

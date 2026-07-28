@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from scipy.signal import fftconvolve
@@ -1520,9 +1521,7 @@ def test_optional_comparison_helper_runs_without_mtrf_dependency() -> None:
     assert result.metrics["fft_vs_time"] > 0.95
 
 
-def test_frequency_trf_plot_if_matplotlib_available() -> None:
-    plt = pytest.importorskip("matplotlib.pyplot")
-
+def test_frequency_trf_plot() -> None:
     rng = np.random.default_rng(19)
     fs = 1_000
     kernel = np.zeros(20)
@@ -1553,9 +1552,7 @@ def test_frequency_trf_plot_if_matplotlib_available() -> None:
     plt.close(fig)
 
 
-def test_frequency_trf_plot_grid_if_matplotlib_available() -> None:
-    plt = pytest.importorskip("matplotlib.pyplot")
-
+def test_frequency_trf_plot_grid() -> None:
     rng = np.random.default_rng(20)
     fs = 500
     n_samples = 2_048
@@ -1601,9 +1598,7 @@ def test_frequency_trf_plot_grid_if_matplotlib_available() -> None:
     plt.close(fig)
 
 
-def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() -> None:
-    plt = pytest.importorskip("matplotlib.pyplot")
-
+def test_frequency_trf_transfer_and_coherence_plots() -> None:
     rng = np.random.default_rng(26)
     fs = 1_000
     kernel = np.zeros(24)
@@ -1651,9 +1646,7 @@ def test_frequency_trf_transfer_and_coherence_plots_if_matplotlib_available() ->
     plt.close(cross_fig)
 
 
-def test_frequency_resolved_weight_plot_if_matplotlib_available() -> None:
-    plt = pytest.importorskip("matplotlib.pyplot")
-
+def test_frequency_resolved_weight_plot() -> None:
     rng = np.random.default_rng(28)
     fs = 1_000
     times = np.arange(0, 0.060, 1.0 / fs)
@@ -1696,9 +1689,7 @@ def test_frequency_resolved_weight_plot_if_matplotlib_available() -> None:
     plt.close(power_fig)
 
 
-def test_frequency_trf_plot_rejects_invalid_indices_if_matplotlib_available() -> None:
-    pytest.importorskip("matplotlib.pyplot")
-
+def test_frequency_trf_plot_rejects_invalid_indices() -> None:
     rng = np.random.default_rng(22)
     fs = 1_000
     kernel = np.zeros(20)

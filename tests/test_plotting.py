@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import matplotlib.pyplot as pyplot
 import numpy as np
 import pytest
 
@@ -8,7 +9,6 @@ import fftrf.plotting as plotting
 
 @pytest.fixture()
 def plt():
-    pyplot = pytest.importorskip("matplotlib.pyplot")
     yield pyplot
     pyplot.close("all")
 

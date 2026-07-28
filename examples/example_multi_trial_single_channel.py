@@ -12,7 +12,7 @@ from simulated_data import (
     require_matplotlib,
 )
 
-from fftrf import TRF, inverse_variance_weights, r2_score
+from fftrf import TRF, r2_score
 
 OUTPUT_PATH = Path("artifacts/examples/multi_trial_single_channel.png")
 
@@ -39,7 +39,6 @@ def main() -> None:
         window="hann",
         k="loo",
         show_progress=True,
-        trial_weights=inverse_variance_weights(train_response),
     )
     prediction, held_out_score = model.predict(stimulus=test_stimulus, response=test_response)
     held_out_r2 = float(r2_score(test_response, prediction).mean())

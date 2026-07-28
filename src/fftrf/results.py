@@ -87,6 +87,12 @@ class PermutationTestResult:
         example ``"circular_shift"`` or ``"trial_shuffle"``.
     n_permutations:
         Number of surrogate scores stored in :attr:`null_scores`.
+
+    Notes
+    -----
+    The minimum attainable p-value is ``1 / (n_permutations + 1)``.
+    Per-output p-values returned when ``average=False`` are uncorrected for
+    multiple comparisons.
     """
 
     observed_score: np.ndarray | float

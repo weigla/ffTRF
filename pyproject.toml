@@ -26,6 +26,7 @@ classifiers = [
   "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+  "matplotlib>=3.8",
   "numpy>=1.26",
   "scipy>=1.12",
 ]
@@ -37,7 +38,6 @@ Documentation = "https://weigla.github.io/ffTRF/"
 
 [project.optional-dependencies]
 test = [
-  "matplotlib>=3.8",
   "pytest>=9",
   "pytest-cov>=6",
 ]
@@ -45,11 +45,9 @@ lint = [
   "ruff>=0.8",
 ]
 compare = [
-  "matplotlib>=3.8",
   "mtrf>=2.0",
 ]
 docs = [
-  "matplotlib>=3.8",
   "mkdocs>=1.6",
   "mkdocs-jupyter>=0.25",
   "mkdocs-material>=9.5",
@@ -70,6 +68,10 @@ include = [
   "/tests",
   "/docs",
   "/examples",
+  "/artifacts/runtime_benchmark.md",
+  "/artifacts/runtime_benchmark.json",
+  "/artifacts/real_eeg_benchmark.md",
+  "/artifacts/real_eeg_benchmark.json",
   "/pyproject.toml",
   "/pixi.lock",
   "/mkdocs.yml",
@@ -115,15 +117,13 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
 
 [tool.pixi.dependencies]
+"matplotlib-base" = ">=3.8"
 python = ">=3.10,<3.15"
 numpy = ">=1.26"
 scipy = ">=1.12"
 
 [tool.pixi.pypi-dependencies]
 fftrf = { path = ".", editable = true }
-
-[tool.pixi.feature.tests.dependencies]
-matplotlib = ">=3.8"
 
 [tool.pixi.feature.tests.pypi-dependencies]
 pytest = ">=9"
@@ -139,14 +139,10 @@ pip = ">=24"
 python-build = ">=1.2"
 twine = ">=6"
 
-[tool.pixi.feature.comparison.dependencies]
-matplotlib = ">=3.8"
-
 [tool.pixi.feature.comparison.pypi-dependencies]
 mtrf = ">=2.0"
 
 [tool.pixi.feature.docs-site.pypi-dependencies]
-matplotlib = ">=3.8"
 mkdocs = ">=1.6"
 mkdocs-jupyter = ">=0.25"
 mkdocs-material = ">=9.5"
@@ -170,7 +166,7 @@ package-build = "python -m build --no-isolation"
 package-check = "python -m twine check dist/*"
 import-check = "python -c \"import fftrf; print(fftrf.TRF.__name__)\""
 compare-demo = "python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show"
-benchmark-demo = "python examples/benchmark_runtime.py --output artifacts/runtime_benchmark.md"
-real-eeg-benchmark = "python examples/benchmark_real_eeg.py --output artifacts/real_eeg_benchmark.md"
+benchmark-demo = "python examples/benchmark_runtime.py --readme-summary README.md"
+real-eeg-benchmark = "python examples/benchmark_real_eeg.py --readme-summary README.md"
 docs-serve = "mkdocs serve"
 docs-build = "mkdocs build --strict"

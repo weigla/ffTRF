@@ -174,8 +174,8 @@ class TRF:
         Segment length expressed in seconds. This mirrors :attr:`segment_length`
         in a more user-friendly unit.
     bootstrap_interval:
-        Optional trial-bootstrap confidence interval with shape
-        ``(2, n_inputs, n_lags, n_outputs)``.
+        Optional pointwise trial-bootstrap percentile interval with shape
+        ``(2, n_inputs, n_lags, n_outputs)``. It is not a simultaneous band.
     bootstrap_level:
         Confidence level used for :attr:`bootstrap_interval`.
     spectral_method:
@@ -338,15 +338,20 @@ class TRF:
             Optional detrending passed to :func:`scipy.signal.detrend`.
         k:
             Number of cross-validation folds. ``-1`` or ``"loo"`` means
-            leave-one-out over trials. With a single regularization candidate,
-            the direct-fit shortcut remains the default, but setting ``k``
-            explicitly to a value such as ``5`` or ``"loo"`` requests
-            cross-validation for that fixed ridge value as well.
+            leave-one-out over the supplied trials. With a single
+            regularization candidate, the direct-fit shortcut remains the
+            default, but setting ``k`` explicitly to a value such as ``5`` or
+            ``"loo"`` requests cross-validation for that fixed ridge value as
+            well. Trial boundaries must be scientifically valid validation
+            units; adjacent chunks from one continuous recording may remain
+            dependent.
         average:
             How cross-validation scores should be reduced across output
             channels/features. ``True`` returns a single score per regularization
             value, ``False`` returns one score per output, and a sequence of
-            indices averages only over the selected outputs.
+            indices averages only over the selected outputs. With ``False``,
+            one global regularization candidate is still selected by averaging
+            across outputs; separate per-output penalties are not fitted.
         seed:
             Optional random seed for shuffling trial order before creating
             folds. Seeded shuffling follows Python's ``random`` implementation
@@ -359,12 +364,17 @@ class TRF:
             bootstrap resamples. ``1`` keeps the serial behavior. ``-1`` uses
             all available CPU cores.
         trial_weights:
-            Optional trial weights. Use ``"inverse_variance"`` for
-            inverse-variance weighting or pass an explicit vector with one
-            weight per training trial.
+            Optional non-negative weight per training trial. The
+            ``"inverse_variance"`` shortcut treats total target variance as a
+            noise proxy; because neural signal differences can also affect
+            variance, it is a heuristic rather than a general default. Prefer
+            prespecified, analysis-independent quality weights where possible.
+            With no explicit weights, trials contribute equally; segments
+            within a trial divide that trial's contribution equally.
         bootstrap_samples:
             Number of trial-bootstrap resamples used to estimate a confidence
-            interval for the fitted kernel. ``0`` disables the bootstrap.
+            interval for the fitted kernel. The stored percentile bounds are
+            pointwise, not simultaneous. ``0`` disables the bootstrap.
         bootstrap_level:
             Confidence level used for the stored bootstrap interval.
         bootstrap_seed:
@@ -960,8 +970,7 @@ class TRF:
         Notes
         -----
         This helper is a thin wrapper around :mod:`matplotlib`. It imports the
-        plotting backend lazily so that the core toolbox stays usable without
-        installing plotting dependencies.
+        plotting backend lazily to keep estimator startup lightweight.
         """
 
         if self.weights is None or self.times is None:
@@ -1907,8 +1916,10 @@ class TRF:
         The estimator must already be fitted. By default the method reuses the
         same fit settings and the same trial-weighting strategy as the model.
         Bootstrap resampling is performed over trials, so at least two trials
-        are required. ``n_jobs`` controls optional parallel execution across
-        bootstrap resamples.
+        are required. The returned bounds are pointwise percentile intervals:
+        they are not simultaneous across lags, inputs, or outputs and do not
+        include uncertainty from regularization or spectral-setting selection.
+        ``n_jobs`` controls optional parallel execution across resamples.
 
         Parameters
         ----------
@@ -2048,7 +2059,9 @@ class TRF:
         so ``tail="greater"`` is the natural default. The returned null scores
         follow the same scalar-vs-array contract as :meth:`score`: aggregated
         scores are stored as a 1D array of length ``n_permutations``, while
-        ``average=False`` keeps one surrogate score per output.
+        ``average=False`` keeps one surrogate score per output. The minimum
+        attainable p-value is ``1 / (n_permutations + 1)``. Per-output p-values
+        are not corrected for multiple comparisons.
         """
 
         if self.weights is None or self.fs is None:
@@ -2168,6 +2181,12 @@ class TRF:
         PermutationTestResult
             Container with the observed held-out score, surrogate null scores,
             p-value, and z-score.
+
+        Notes
+        -----
+        The minimum attainable p-value is
+        ``1 / (n_permutations + 1)``. When ``average=False``, the returned
+        per-output p-values are not corrected for multiple comparisons.
         """
 
         train_stimulus_trials, _ = _coerce_trials(train_stimulus, "train_stimulus")

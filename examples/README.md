@@ -1,98 +1,87 @@
 # Examples
 
-This directory contains optional demo and comparison code that is not part of
-the core `ffTRF` library API.
+The scripts in this directory are organized by user goal. The installable
+toolbox itself lives in `src/fftrf/`.
 
-The main installable toolbox lives in:
+## Start here
 
-- `src/fftrf/`
+- `example_single_trial_single_channel.py`: smallest forward fit; its prediction
+  score is an in-sample reconstruction diagnostic.
+- `example_multi_trial_single_channel.py`: multi-trial CV and an untouched test
+  trial.
+- `example_multifeature_multichannel.py`: multiple predictors and outputs.
+- `example_backward_decoding.py`: response-to-stimulus decoding.
+- `example_save_and_load.py`: persistence and lag-window export.
 
-The files here are intended for:
+For most workflows, begin with the multi-trial example. It keeps
+equal trial contribution and clearly separates training/CV data from final
+evaluation.
 
-- runnable usage examples for the main `TRF` API patterns
-- sanity checks against time-domain references
-- side-by-side comparisons with `mTRF`
-- exploratory plotting for development and validation
+## Inference and trial quality
 
-## Example coverage
+- `example_bootstrap_confidence_interval.py`: pointwise percentile bootstrap
+  intervals and an independent held-out score.
+- `example_permutation_significance.py`: fixed-kernel circular-shift test on an
+  untouched trial.
+- `example_trial_weighting.py`: inverse-variance weighting in a controlled
+  simulation where added noise is known. Total variance is not a general neural
+  data-quality measure.
 
-The example scripts are organized around the main modeling combinations that are
-practical with `TRF`:
+## Advanced estimation
 
-- `example_single_trial_single_channel.py`
-  Single trial, single stimulus feature, single response channel, forward model.
-- `example_multi_trial_single_channel.py`
-  Multiple trials, single feature, single channel, cross-validated
-  regularization.
-- `example_multifeature_multichannel.py`
-  Multiple stimulus features, multiple response channels, forward model.
-- `example_banded_regularization.py`
-  Optional banded ridge search over grouped multifeature predictors.
-- `example_multitaper_estimator.py`
-  Optional multi-taper estimation with `R^2`, transfer-function plots, cross spectra, and coherence.
-- `example_frequency_resolved_weights.py`
-  Spectrogram-like frequency-resolved view of one recovered kernel, shown as both signed weights and Hilbert-envelope power.
-- `example_mtrf_sample_eeg.py`
-  Optional real-data comparison against the public mTRF speech EEG sample, with `neg_mse`-based lambda selection and held-out Pearson reporting for both a forward benchmark and a backward compressed-envelope benchmark on the same split; the backward target uses a `p=0.4` broadband compression, and optional segmented Hann settings are available for practical forward and backward ffTRF runs.
-- `benchmark_real_eeg.py`
-  Reproduce the practical 2 s Hann ffTRF and finite-lag mTRF benchmark in
-  isolated processes and write runtime, peak RSS, and held-out accuracy to a
-  Markdown table.
-- `generate_documentation_figures.py`
-  Regenerate the real EEG documentation figures used in the README and
-  documentation site.
-- `example_backward_decoding.py`
-  Backward model: multichannel responses used to reconstruct a single stimulus.
-- `example_bootstrap_confidence_interval.py`
-  Forward model with a stored bootstrap confidence interval.
-- `example_trial_weighting.py`
-  Compare an unweighted fit to a fit that uses inverse-variance trial weights.
-- `example_save_and_load.py`
-  Save a fitted model, load it again, and export a different lag window.
+- `example_banded_regularization.py`: grouped predictor penalties.
+- `example_multitaper_estimator.py`: DPSS multitaper estimation.
+- `example_frequency_resolved_weights.py`: lag-frequency views of a fitted
+  kernel.
 
-Each example is intentionally a plain Python script showing the API calls,
-learned attributes, and one corresponding figure. Running a script prints the
-relevant `TRF` attributes and saves a figure under `artifacts/examples/`.
-They are meant to be read alongside the main README: each script follows the
-same pattern of `train(...)`, attribute inspection, `predict(...)`, and
-plotting, but focuses on one concrete use case. The optional features are
-covered with dedicated examples rather than changing the baseline examples into
-advanced-only workflows. The examples now also demonstrate friendlier options
-such as `segment_duration=...` in seconds and `k="loo"` for leave-one-out
-cross-validation.
+## Focused real EEG workflows
 
-Example commands:
+- `example_real_eeg_forward.py`: public speech bands to multichannel EEG with
+  seven training/CV and three held-out segments.
+- `example_real_eeg_backward.py`: multichannel EEG to a compressed broadband
+  envelope on the same held-out split.
+
+The dataset is downloaded on first use.
+Cached files are rechecked before decoding, and incomplete or mismatched
+downloads are never installed. The upstream `.npy` uses a pickle-backed object
+representation, so the helper also restricts decoding to the few NumPy
+constructors this file requires. Do not bypass the check or substitute an
+untrusted file.
+
+A standard ffTRF installation includes the plotting dependency, and these
+scripts do not import the optional `mtrf` package.
 
 ```bash
-python examples/example_single_trial_single_channel.py
-python examples/example_multi_trial_single_channel.py
-python examples/example_multifeature_multichannel.py
-python examples/example_banded_regularization.py
-python examples/example_multitaper_estimator.py
-python examples/example_frequency_resolved_weights.py
-python examples/example_backward_decoding.py
-python examples/example_bootstrap_confidence_interval.py
-python examples/example_trial_weighting.py
-python examples/example_save_and_load.py
+python examples/example_real_eeg_forward.py
+python examples/example_real_eeg_backward.py
 ```
 
-Optional compare-environment example:
+## Advanced validation and benchmarks
+
+- `compare_real_eeg_with_mtrf.py`: comprehensive forward/backward toolbox
+  comparison, plotting, timing, and memory measurement.
+- `benchmark_real_eeg.py`: repeated isolated-process matched and practical
+  real-EEG benchmark, with Markdown and raw JSON output.
+- `generate_documentation_figures.py`: real-data gallery generator.
+- `compare_with_mtrf.py`: small synthetic reference comparison.
+- `benchmark_runtime.py`: synthetic crossover scenarios with correctness,
+  repeated runtime, and total plus additional peak-memory checks.
+- `benchmark_utils.py`: shared provenance, thread-control, and reporting helpers.
+- `comparison_utils.py`: shared synthetic comparison helpers.
+
+These files are validation infrastructure rather than introductory tutorials:
 
 ```bash
-pixi run -e compare python examples/example_mtrf_sample_eeg.py
-pixi run -e compare python examples/benchmark_real_eeg.py
+pixi run -e compare python examples/compare_real_eeg_with_mtrf.py
+pixi run -e compare benchmark-demo
+pixi run -e compare real-eeg-benchmark
 pixi run -e compare python examples/generate_documentation_figures.py
 ```
 
-Development-only synthetic checks:
+The two benchmark tasks also synchronize their generated summary blocks in the
+main README. Run them from a clean revision before publishing release claims.
 
-```bash
-pixi run -e compare compare-demo
-```
-
-Or with pip:
-
-```bash
-pip install -e ".[compare]" mtrf
-python examples/compare_with_mtrf.py --output artifacts/kernel_comparison.png --no-show
-```
+Each user example prints the relevant fitted state and saves a figure under
+`artifacts/examples/`. Read the inference examples alongside the corresponding
+documentation guides so the resampling unit, null model, and multiplicity
+assumptions remain explicit.

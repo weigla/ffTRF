@@ -60,8 +60,9 @@ changes and require explicit tests and documentation.
 - `src/fftrf/results.py`: public result dataclasses.
 - `src/fftrf/preprocessing.py`: public signal preprocessing and trial-weight
   helpers.
-- `src/fftrf/plotting.py`: optional Matplotlib plotting functions. Matplotlib
-  must remain an optional dependency and should be imported lazily.
+- `src/fftrf/plotting.py`: Matplotlib plotting functions. Matplotlib is a
+  standard runtime dependency; imports may remain lazy to keep package startup
+  lightweight.
 - `src/fftrf/utils.py`: validation, input coercion, regularization expansion,
   segment settings, and small shared helpers.
 
@@ -69,7 +70,7 @@ changes and require explicit tests and documentation.
 
 - `tests/test_model.py`: numerical behavior, solver/reference equivalence,
   fitting and CV behavior, shapes, metrics, preprocessing, performance-related
-  cache behavior, multitaper support, and optional plotting.
+  cache behavior, multitaper support, and plotting.
 - `tests/test_public_api.py`: user-facing workflows and contracts such as
   diagnostics aliases, bootstrap updates, persistence, copying, permutation
   tests, and top-level exports.
@@ -95,8 +96,8 @@ changes and require explicit tests and documentation.
 - Preserve reproducibility controls such as explicit seeds and deterministic
   serial/parallel equivalence.
 - Avoid adding runtime dependencies unless the feature cannot reasonably be
-  implemented with NumPy, SciPy, or the standard library. Keep plotting and
-  comparison dependencies optional.
+  implemented with NumPy, SciPy, Matplotlib, or the standard library.
+  Comparison-only dependencies such as `mtrf` should remain optional.
 - Treat spectral and CV cache reuse as part of the performance design.
   Changes to `spectral.py`, `prediction.py`, or CV loops should not silently
   restore repeated FFTs, repeated decompositions, or per-candidate work that
@@ -165,6 +166,7 @@ Additional verification by change type:
 
   ```bash
   pixi run -e compare benchmark-demo
+  pixi run -e compare real-eeg-benchmark
   ```
 
 The CI baseline is `python -m pytest -q`, smoke tests for core examples, and a

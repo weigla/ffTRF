@@ -12,6 +12,9 @@ For a released package:
 pip install fftrf
 ```
 
+The standard installation includes Matplotlib, so `model.plot(...)` and the
+other plotting helpers work without an additional extra.
+
 or if you use [Pixi](https://pixi.prefix.dev/latest/installation/#install-from-source):
 
 ```bash
@@ -31,7 +34,7 @@ Then run `pixi install`. If you want to pin a specific revision, add
 ```python
 import numpy as np
 
-from fftrf import TRF, inverse_variance_weights
+from fftrf import TRF
 
 def simulate_trial(
     rng: np.random.Generator,
@@ -65,11 +68,7 @@ cv_scores = model.train(
     tmin=0.0,
     tmax=kernel.shape[0] / fs,
     regularization=np.logspace(-6, 0, 7),
-    segment_duration=1.0,
-    overlap=0.5,
-    window="hann",
     k="loo",
-    trial_weights=inverse_variance_weights(response[:-1]),
 )
 
 prediction = model.predict(stimulus=stimulus[-1])
@@ -93,17 +92,14 @@ fig, ax = model.plot(
   matches the simulated ground-truth kernel.
 - `regularization=np.logspace(-6, 0, 7)` asks the model to cross-validate over
   seven ridge values instead of fitting one fixed value.
-- `segment_duration=1.0` sets the segment size used to estimate the
-  cross-spectra.
-- `overlap=0.5` reuses half of each segment in the next one, which can help
-  stabilize estimates when segments are short.
-- `window="hann"` applies a Hann window before the FFT.
 - `k="loo"` means leave-one-out cross-validation over trials.
-- `trial_weights=inverse_variance_weights(response[:-1])` downweights noisier
-  training trials in the aggregate spectra.
 - `prediction = model.predict(...)` returns the held-out prediction, and
   `score = model.score(...)` evaluates that held-out trial with the estimator's
   configured metric.
+
+This first example deliberately keeps the default spectral settings and equal
+trial contribution. Segment choices and trial weighting are separate analysis
+decisions; introduce them only when they answer a need in your data.
 
 ## What `train(...)` Returns
 
@@ -202,4 +198,4 @@ setting.
   [Significance Testing](guides/significance-testing.md)
 - Browse runnable scripts in [Examples](examples.md)
 - Open the rendered tutorial in
-  [Getting Started Notebook](../notebooks/getting-started/)
+  [Getting Started Notebook](notebooks/getting-started.ipynb)

@@ -6,7 +6,7 @@ predictor and response signals for TRF analysis:
 
 - create positive/negative half-wave regressors from a waveform
 - resample derived regressors to a target sampling rate
-- compute inverse-variance trial weights for noisy recordings
+- compute heuristic inverse-variance trial weights in controlled settings
 """
 
 from __future__ import annotations
@@ -126,14 +126,14 @@ def inverse_variance_weights(trials: Sequence[np.ndarray]) -> np.ndarray:
 
     Notes
     -----
-    This helper is intentionally simple: it treats variance as a proxy for
-    trial noisiness and does not attempt to estimate structured noise
-    covariance. It is a good default when some trials are visibly noisier than
-    others and you want those trials to contribute less to the aggregate
-    cross-spectra during fitting or bootstrap diagnostics.
+    This helper is intentionally simple: it treats total variance as a proxy
+    for trial noisiness and does not estimate structured noise covariance.
+    Neural or evoked signal differences can also change total variance, so
+    these weights are a heuristic rather than a general default. Use them only
+    when larger variance is defensibly attributable to poorer data quality,
+    compare against an unweighted fit, and report the weighting rule.
 
-    Variance is averaged across channels/features so noisier trials contribute
-    less to the final fit.
+    Variance is averaged across channels/features before the inverse is taken.
     """
 
     if len(trials) == 0:

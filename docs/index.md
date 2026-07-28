@@ -38,7 +38,7 @@ frequency-domain views without retraining.
 
 - New to the package: go to [Getting Started](getting-started.md)
 - Prefer a tutorial you can read like a lab notebook: go to
-  [Getting Started Notebook](notebooks/getting-started/)
+  [Getting Started Notebook](notebooks/getting-started.ipynb)
 - Need the full workflow explained end to end: go to
   [Core Workflow](guides/core-workflow.md)
 - Need shape conventions and multi-trial rules: go to
@@ -63,7 +63,7 @@ For a lightweight editable install:
 pip install -e .
 ```
 
-Optional extras:
+Development extras:
 
 ```bash
 pip install -e ".[test]"
@@ -106,6 +106,6 @@ That has a few practical consequences:
   weighting noisy trials and quantifying uncertainty
 - [Significance Testing](guides/significance-testing.md): permutation-based
   null distributions for held-out scores
-- [Notebooks](notebooks/getting-started/): rendered walk-throughs with the
+- [Notebooks](notebooks/getting-started.ipynb): rendered walk-throughs with the
   same API used in the example scripts
 - [Reference](reference/index.md): detailed function-by-function API

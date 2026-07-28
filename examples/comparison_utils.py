@@ -243,13 +243,7 @@ def plot_kernel_comparison(
 ) -> Any:
     """Plot the kernel comparison and optionally save it to disk."""
 
-    try:
-        import matplotlib.pyplot as plt
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "matplotlib is required for plotting. Install the compare extras "
-            "or use the Pixi compare environment."
-        ) from exc
+    import matplotlib.pyplot as plt
 
     times_ms = result.times * 1e3
     fig, ax = plt.subplots(figsize=(10, 5))

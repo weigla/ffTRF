@@ -1,0 +1,900 @@
+{
+  "environment": {
+    "cpu": "Apple M3",
+    "fftrf": "0.1.0",
+    "machine": "arm64",
+    "mtrf": "2.1.2",
+    "native_threads_per_worker": 1,
+    "numpy": "2.4.2",
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "python": "3.13.12",
+    "scipy": "1.17.1",
+    "source": "1df09985750d (dirty)",
+    "thread_environment_variables": [
+      "OMP_NUM_THREADS",
+      "OPENBLAS_NUM_THREADS",
+      "MKL_NUM_THREADS",
+      "VECLIB_MAXIMUM_THREADS",
+      "NUMEXPR_NUM_THREADS"
+    ]
+  },
+  "generated_utc": "2026-07-28T09:13:31.490509+00:00",
+  "protocol": {
+    "command": "pixi run -e compare benchmark-demo",
+    "native_threads_per_worker": 1,
+    "repeats": 3,
+    "warmup": 1
+  },
+  "rows": [
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 0.0,
+        "median": 0.0,
+        "min": 0.0
+      },
+      "fft_peak_mib": {
+        "max": 98.0625,
+        "median": 97.78125,
+        "min": 97.625
+      },
+      "fft_prediction_score": 0.9989579262888526,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 97.625,
+          "duration_seconds": 0.020534208044409752,
+          "peak_memory_mib": 97.625
+        },
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 97.78125,
+          "duration_seconds": 0.020661499933339655,
+          "peak_memory_mib": 97.78125
+        },
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 98.0625,
+          "duration_seconds": 0.020527291926555336,
+          "peak_memory_mib": 98.0625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.020661499933339655,
+        "median": 0.020534208044409752,
+        "min": 0.020527291926555336
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 1000,
+      "kernel_corr": 0.9999984491574353,
+      "lag_matrix_mib": 10.0,
+      "mtrf_additional_peak_mib": {
+        "max": 3.890625,
+        "median": 2.5625,
+        "min": 2.53125
+      },
+      "mtrf_peak_mib": {
+        "max": 129.34375,
+        "median": 126.921875,
+        "min": 126.09375
+      },
+      "mtrf_prediction_score": 0.998959424283032,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 3.890625,
+          "baseline_peak_memory_mib": 125.453125,
+          "duration_seconds": 0.01189616706687957,
+          "peak_memory_mib": 129.34375
+        },
+        {
+          "additional_peak_memory_mib": 2.5625,
+          "baseline_peak_memory_mib": 123.53125,
+          "duration_seconds": 0.010516874957829714,
+          "peak_memory_mib": 126.09375
+        },
+        {
+          "additional_peak_memory_mib": 2.53125,
+          "baseline_peak_memory_mib": 124.390625,
+          "duration_seconds": 0.010654332931153476,
+          "peak_memory_mib": 126.921875
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.01189616706687957,
+        "median": 0.010654332931153476,
+        "min": 0.010516874957829714
+      },
+      "n_lags": 40,
+      "n_samples": 4096,
+      "n_trials": 8,
+      "name": "Moderate length",
+      "peak_memory_ratio": 1.29801853627357,
+      "shape": "1->1",
+      "speedup": 0.5188577474286387
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 3.84375,
+        "median": 3.59375,
+        "min": 2.0625
+      },
+      "fft_peak_mib": {
+        "max": 104.8125,
+        "median": 104.75,
+        "min": 103.640625
+      },
+      "fft_prediction_score": 0.9989642249708518,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 3.59375,
+          "baseline_peak_memory_mib": 101.15625,
+          "duration_seconds": 0.2867789169540629,
+          "peak_memory_mib": 104.75
+        },
+        {
+          "additional_peak_memory_mib": 3.84375,
+          "baseline_peak_memory_mib": 100.96875,
+          "duration_seconds": 0.2927520420635119,
+          "peak_memory_mib": 104.8125
+        },
+        {
+          "additional_peak_memory_mib": 2.0625,
+          "baseline_peak_memory_mib": 101.578125,
+          "duration_seconds": 0.36642037506680936,
+          "peak_memory_mib": 103.640625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.36642037506680936,
+        "median": 0.2927520420635119,
+        "min": 0.2867789169540629
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 1000,
+      "kernel_corr": 0.9999999264721482,
+      "lag_matrix_mib": 73.2421875,
+      "mtrf_additional_peak_mib": {
+        "max": 54.640625,
+        "median": 54.625,
+        "min": 52.921875
+      },
+      "mtrf_peak_mib": {
+        "max": 183.390625,
+        "median": 182.578125,
+        "min": 178.125
+      },
+      "mtrf_prediction_score": 0.998964258309885,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 52.921875,
+          "baseline_peak_memory_mib": 125.203125,
+          "duration_seconds": 0.060029333108104765,
+          "peak_memory_mib": 178.125
+        },
+        {
+          "additional_peak_memory_mib": 54.640625,
+          "baseline_peak_memory_mib": 128.75,
+          "duration_seconds": 0.05692962498869747,
+          "peak_memory_mib": 183.390625
+        },
+        {
+          "additional_peak_memory_mib": 54.625,
+          "baseline_peak_memory_mib": 127.953125,
+          "duration_seconds": 0.05368558398913592,
+          "peak_memory_mib": 182.578125
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.060029333108104765,
+        "median": 0.05692962498869747,
+        "min": 0.05368558398913592
+      },
+      "n_lags": 40,
+      "n_samples": 60000,
+      "n_trials": 4,
+      "name": "Long recording",
+      "peak_memory_ratio": 1.742989260143198,
+      "shape": "1->1",
+      "speedup": 0.1944636306801464
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 1.53125,
+        "median": 1.15625,
+        "min": 0.125
+      },
+      "fft_peak_mib": {
+        "max": 100.40625,
+        "median": 99.8125,
+        "min": 99.15625
+      },
+      "fft_prediction_score": 0.9989363284017253,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 0.125,
+          "baseline_peak_memory_mib": 99.6875,
+          "duration_seconds": 0.14257416711188853,
+          "peak_memory_mib": 99.8125
+        },
+        {
+          "additional_peak_memory_mib": 1.15625,
+          "baseline_peak_memory_mib": 98.0,
+          "duration_seconds": 0.1435524169355631,
+          "peak_memory_mib": 99.15625
+        },
+        {
+          "additional_peak_memory_mib": 1.53125,
+          "baseline_peak_memory_mib": 98.875,
+          "duration_seconds": 0.17590795794967562,
+          "peak_memory_mib": 100.40625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.17590795794967562,
+        "median": 0.1435524169355631,
+        "min": 0.14257416711188853
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 10000,
+      "kernel_corr": 0.9999896186829229,
+      "lag_matrix_mib": 137.3291015625,
+      "mtrf_additional_peak_mib": {
+        "max": 209.6875,
+        "median": 208.484375,
+        "min": 206.859375
+      },
+      "mtrf_peak_mib": {
+        "max": 334.78125,
+        "median": 334.421875,
+        "min": 334.171875
+      },
+      "mtrf_prediction_score": 0.9989477373317264,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 209.6875,
+          "baseline_peak_memory_mib": 125.09375,
+          "duration_seconds": 0.21351033309474587,
+          "peak_memory_mib": 334.78125
+        },
+        {
+          "additional_peak_memory_mib": 208.484375,
+          "baseline_peak_memory_mib": 125.9375,
+          "duration_seconds": 0.24402695801109076,
+          "peak_memory_mib": 334.421875
+        },
+        {
+          "additional_peak_memory_mib": 206.859375,
+          "baseline_peak_memory_mib": 127.3125,
+          "duration_seconds": 0.20510908297728747,
+          "peak_memory_mib": 334.171875
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.24402695801109076,
+        "median": 0.21351033309474587,
+        "min": 0.20510908297728747
+      },
+      "n_lags": 300,
+      "n_samples": 30000,
+      "n_trials": 2,
+      "name": "High rate",
+      "peak_memory_ratio": 3.3505009392611145,
+      "shape": "1->1",
+      "speedup": 1.4873336001760602
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 2.921875,
+        "median": 2.6875,
+        "min": 1.953125
+      },
+      "fft_peak_mib": {
+        "max": 104.0,
+        "median": 102.984375,
+        "min": 102.359375
+      },
+      "fft_prediction_score": 0.9989502284826939,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 2.921875,
+          "baseline_peak_memory_mib": 101.078125,
+          "duration_seconds": 0.3029441249091178,
+          "peak_memory_mib": 104.0
+        },
+        {
+          "additional_peak_memory_mib": 2.6875,
+          "baseline_peak_memory_mib": 100.296875,
+          "duration_seconds": 0.295664667035453,
+          "peak_memory_mib": 102.984375
+        },
+        {
+          "additional_peak_memory_mib": 1.953125,
+          "baseline_peak_memory_mib": 100.40625,
+          "duration_seconds": 0.2941658750642091,
+          "peak_memory_mib": 102.359375
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.3029441249091178,
+        "median": 0.295664667035453,
+        "min": 0.2941658750642091
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 10000,
+      "kernel_corr": 0.9999951044586933,
+      "lag_matrix_mib": 274.658203125,
+      "mtrf_additional_peak_mib": {
+        "max": 414.28125,
+        "median": 414.234375,
+        "min": 413.78125
+      },
+      "mtrf_peak_mib": {
+        "max": 540.53125,
+        "median": 540.15625,
+        "min": 539.15625
+      },
+      "mtrf_prediction_score": 0.9989554735342789,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 414.234375,
+          "baseline_peak_memory_mib": 125.921875,
+          "duration_seconds": 0.3954088749596849,
+          "peak_memory_mib": 540.15625
+        },
+        {
+          "additional_peak_memory_mib": 414.28125,
+          "baseline_peak_memory_mib": 126.25,
+          "duration_seconds": 0.3768848750041798,
+          "peak_memory_mib": 540.53125
+        },
+        {
+          "additional_peak_memory_mib": 413.78125,
+          "baseline_peak_memory_mib": 125.375,
+          "duration_seconds": 0.35557000001426786,
+          "peak_memory_mib": 539.15625
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.3954088749596849,
+        "median": 0.3768848750041798,
+        "min": 0.35557000001426786
+      },
+      "n_lags": 300,
+      "n_samples": 60000,
+      "n_trials": 2,
+      "name": "Long high rate",
+      "peak_memory_ratio": 5.245031103019269,
+      "shape": "1->1",
+      "speedup": 1.2747038013811358
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 0.984375,
+        "median": 0.84375,
+        "min": 0.703125
+      },
+      "fft_peak_mib": {
+        "max": 99.59375,
+        "median": 99.0,
+        "min": 98.640625
+      },
+      "fft_prediction_score": 0.9993683932897706,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 0.84375,
+          "baseline_peak_memory_mib": 98.75,
+          "duration_seconds": 0.023902583052404225,
+          "peak_memory_mib": 99.59375
+        },
+        {
+          "additional_peak_memory_mib": 0.703125,
+          "baseline_peak_memory_mib": 98.296875,
+          "duration_seconds": 0.023193500004708767,
+          "peak_memory_mib": 99.0
+        },
+        {
+          "additional_peak_memory_mib": 0.984375,
+          "baseline_peak_memory_mib": 97.65625,
+          "duration_seconds": 0.022947165998630226,
+          "peak_memory_mib": 98.640625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.023902583052404225,
+        "median": 0.023193500004708767,
+        "min": 0.022947165998630226
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 1000,
+      "kernel_corr": 0.9999923496234683,
+      "lag_matrix_mib": 22.5,
+      "mtrf_additional_peak_mib": {
+        "max": 10.65625,
+        "median": 10.640625,
+        "min": 10.640625
+      },
+      "mtrf_peak_mib": {
+        "max": 136.671875,
+        "median": 136.578125,
+        "min": 134.59375
+      },
+      "mtrf_prediction_score": 0.999375600310044,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 10.640625,
+          "baseline_peak_memory_mib": 126.03125,
+          "duration_seconds": 0.02639645803719759,
+          "peak_memory_mib": 136.671875
+        },
+        {
+          "additional_peak_memory_mib": 10.640625,
+          "baseline_peak_memory_mib": 125.9375,
+          "duration_seconds": 0.025345458067022264,
+          "peak_memory_mib": 136.578125
+        },
+        {
+          "additional_peak_memory_mib": 10.65625,
+          "baseline_peak_memory_mib": 123.9375,
+          "duration_seconds": 0.024715916020795703,
+          "peak_memory_mib": 134.59375
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.02639645803719759,
+        "median": 0.025345458067022264,
+        "min": 0.024715916020795703
+      },
+      "n_lags": 40,
+      "n_samples": 4096,
+      "n_trials": 6,
+      "name": "Multifeature / multichannel",
+      "peak_memory_ratio": 1.37957702020202,
+      "shape": "3->2",
+      "speedup": 1.092782808195253
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 1.53125,
+        "median": 0.84375,
+        "min": 0.375
+      },
+      "fft_peak_mib": {
+        "max": 100.0625,
+        "median": 99.796875,
+        "min": 98.484375
+      },
+      "fft_prediction_score": 0.9989149542430242,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 0.84375,
+          "baseline_peak_memory_mib": 99.21875,
+          "duration_seconds": 0.14924583304673433,
+          "peak_memory_mib": 100.0625
+        },
+        {
+          "additional_peak_memory_mib": 1.53125,
+          "baseline_peak_memory_mib": 98.265625,
+          "duration_seconds": 0.1434018750442192,
+          "peak_memory_mib": 99.796875
+        },
+        {
+          "additional_peak_memory_mib": 0.375,
+          "baseline_peak_memory_mib": 98.109375,
+          "duration_seconds": 0.14737037499435246,
+          "peak_memory_mib": 98.484375
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.14924583304673433,
+        "median": 0.14737037499435246,
+        "min": 0.1434018750442192
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 10000,
+      "kernel_corr": 0.9999730046676756,
+      "lag_matrix_mib": 274.658203125,
+      "mtrf_additional_peak_mib": {
+        "max": 417.515625,
+        "median": 417.171875,
+        "min": 350.546875
+      },
+      "mtrf_peak_mib": {
+        "max": 543.390625,
+        "median": 541.515625,
+        "min": 475.71875
+      },
+      "mtrf_prediction_score": 0.9989436624560603,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 350.546875,
+          "baseline_peak_memory_mib": 125.171875,
+          "duration_seconds": 0.6830762499012053,
+          "peak_memory_mib": 475.71875
+        },
+        {
+          "additional_peak_memory_mib": 417.515625,
+          "baseline_peak_memory_mib": 124.0,
+          "duration_seconds": 0.642815624945797,
+          "peak_memory_mib": 541.515625
+        },
+        {
+          "additional_peak_memory_mib": 417.171875,
+          "baseline_peak_memory_mib": 126.21875,
+          "duration_seconds": 0.6007710829144344,
+          "peak_memory_mib": 543.390625
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.6830762499012053,
+        "median": 0.642815624945797,
+        "min": 0.6007710829144344
+      },
+      "n_lags": 600,
+      "n_samples": 30000,
+      "n_trials": 2,
+      "name": "Longer lag window",
+      "peak_memory_ratio": 5.426178174416784,
+      "shape": "1->1",
+      "speedup": 4.361905335250936
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 8.234375,
+        "median": 4.828125,
+        "min": 4.8125
+      },
+      "fft_peak_mib": {
+        "max": 108.203125,
+        "median": 104.8125,
+        "min": 102.640625
+      },
+      "fft_prediction_score": 0.9989472015587809,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 8.234375,
+          "baseline_peak_memory_mib": 99.96875,
+          "duration_seconds": 0.1717684589093551,
+          "peak_memory_mib": 108.203125
+        },
+        {
+          "additional_peak_memory_mib": 4.828125,
+          "baseline_peak_memory_mib": 99.984375,
+          "duration_seconds": 0.1662913749460131,
+          "peak_memory_mib": 104.8125
+        },
+        {
+          "additional_peak_memory_mib": 4.8125,
+          "baseline_peak_memory_mib": 97.828125,
+          "duration_seconds": 0.16376362508162856,
+          "peak_memory_mib": 102.640625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.1717684589093551,
+        "median": 0.1662913749460131,
+        "min": 0.16376362508162856
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "cv-8 (k=4)",
+      "fs_hz": 10000,
+      "kernel_corr": 0.9999965682668746,
+      "lag_matrix_mib": 274.658203125,
+      "mtrf_additional_peak_mib": {
+        "max": 224.046875,
+        "median": 221.5625,
+        "min": 215.953125
+      },
+      "mtrf_peak_mib": {
+        "max": 350.265625,
+        "median": 346.546875,
+        "min": 340.640625
+      },
+      "mtrf_prediction_score": 0.9989506961449384,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 224.046875,
+          "baseline_peak_memory_mib": 126.21875,
+          "duration_seconds": 1.4143682499416173,
+          "peak_memory_mib": 350.265625
+        },
+        {
+          "additional_peak_memory_mib": 215.953125,
+          "baseline_peak_memory_mib": 124.6875,
+          "duration_seconds": 1.3939975829562172,
+          "peak_memory_mib": 340.640625
+        },
+        {
+          "additional_peak_memory_mib": 221.5625,
+          "baseline_peak_memory_mib": 124.984375,
+          "duration_seconds": 1.4394016250735149,
+          "peak_memory_mib": 346.546875
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 1.4394016250735149,
+        "median": 1.4143682499416173,
+        "min": 1.3939975829562172
+      },
+      "n_lags": 300,
+      "n_samples": 30000,
+      "n_trials": 4,
+      "name": "Cross-validated ridge",
+      "peak_memory_ratio": 3.306350626118068,
+      "shape": "1->1",
+      "speedup": 8.505361450049922
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 0.0,
+        "median": 0.0,
+        "min": 0.0
+      },
+      "fft_peak_mib": {
+        "max": 100.265625,
+        "median": 98.84375,
+        "min": 98.46875
+      },
+      "fft_prediction_score": 0.9989490369457215,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 98.46875,
+          "duration_seconds": 0.023561958922073245,
+          "peak_memory_mib": 98.46875
+        },
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 98.84375,
+          "duration_seconds": 0.024522083927877247,
+          "peak_memory_mib": 98.84375
+        },
+        {
+          "additional_peak_memory_mib": 0.0,
+          "baseline_peak_memory_mib": 100.265625,
+          "duration_seconds": 0.024467332987114787,
+          "peak_memory_mib": 100.265625
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.024522083927877247,
+        "median": 0.024467332987114787,
+        "min": 0.023561958922073245
+      },
+      "fft_setting": "seg=4096, ov=0.5, hann",
+      "fit_mode": "fixed",
+      "fs_hz": 10000,
+      "kernel_corr": 0.9999962417531346,
+      "lag_matrix_mib": 274.658203125,
+      "mtrf_additional_peak_mib": {
+        "max": 414.25,
+        "median": 413.78125,
+        "min": 413.78125
+      },
+      "mtrf_peak_mib": {
+        "max": 541.015625,
+        "median": 539.953125,
+        "min": 539.46875
+      },
+      "mtrf_prediction_score": 0.9989527873799635,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 414.25,
+          "baseline_peak_memory_mib": 126.765625,
+          "duration_seconds": 0.4198248749598861,
+          "peak_memory_mib": 541.015625
+        },
+        {
+          "additional_peak_memory_mib": 413.78125,
+          "baseline_peak_memory_mib": 126.171875,
+          "duration_seconds": 0.4306521250400692,
+          "peak_memory_mib": 539.953125
+        },
+        {
+          "additional_peak_memory_mib": 413.78125,
+          "baseline_peak_memory_mib": 125.6875,
+          "duration_seconds": 0.41744270792696625,
+          "peak_memory_mib": 539.46875
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.4306521250400692,
+        "median": 0.4198248749598861,
+        "min": 0.41744270792696625
+      },
+      "n_lags": 300,
+      "n_samples": 60000,
+      "n_trials": 2,
+      "name": "Segmented Hann estimate",
+      "peak_memory_ratio": 5.4626936452734745,
+      "shape": "1->1",
+      "speedup": 17.158587541232144
+    },
+    {
+      "direction": "forward",
+      "fft_additional_peak_mib": {
+        "max": 63.78125,
+        "median": 58.46875,
+        "min": 57.546875
+      },
+      "fft_peak_mib": {
+        "max": 168.671875,
+        "median": 160.734375,
+        "min": 160.328125
+      },
+      "fft_prediction_score": 0.9450035006099928,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 58.46875,
+          "baseline_peak_memory_mib": 101.859375,
+          "duration_seconds": 0.04162220796570182,
+          "peak_memory_mib": 160.328125
+        },
+        {
+          "additional_peak_memory_mib": 63.78125,
+          "baseline_peak_memory_mib": 104.890625,
+          "duration_seconds": 0.039276374969631433,
+          "peak_memory_mib": 168.671875
+        },
+        {
+          "additional_peak_memory_mib": 57.546875,
+          "baseline_peak_memory_mib": 103.1875,
+          "duration_seconds": 0.041274082963354886,
+          "peak_memory_mib": 160.734375
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.04162220796570182,
+        "median": 0.041274082963354886,
+        "min": 0.039276374969631433
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 128,
+      "kernel_corr": 0.9883758349947492,
+      "lag_matrix_mib": 39.0,
+      "mtrf_additional_peak_mib": {
+        "max": 34.671875,
+        "median": 34.671875,
+        "min": 34.625
+      },
+      "mtrf_peak_mib": {
+        "max": 165.03125,
+        "median": 164.625,
+        "min": 164.3125
+      },
+      "mtrf_prediction_score": 0.9293223178628173,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 34.671875,
+          "baseline_peak_memory_mib": 130.359375,
+          "duration_seconds": 0.13926508300937712,
+          "peak_memory_mib": 165.03125
+        },
+        {
+          "additional_peak_memory_mib": 34.625,
+          "baseline_peak_memory_mib": 130.0,
+          "duration_seconds": 0.13792620797175914,
+          "peak_memory_mib": 164.625
+        },
+        {
+          "additional_peak_memory_mib": 34.671875,
+          "baseline_peak_memory_mib": 129.640625,
+          "duration_seconds": 0.142379334080033,
+          "peak_memory_mib": 164.3125
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 0.142379334080033,
+        "median": 0.13926508300937712,
+        "min": 0.13792620797175914
+      },
+      "n_lags": 52,
+      "n_samples": 1024,
+      "n_trials": 6,
+      "name": "EEG-scale forward channels",
+      "peak_memory_ratio": 1.0242053076698745,
+      "shape": "16->102",
+      "speedup": 3.3741532945268187
+    },
+    {
+      "direction": "backward",
+      "fft_additional_peak_mib": {
+        "max": 249.265625,
+        "median": 246.84375,
+        "min": 246.609375
+      },
+      "fft_peak_mib": {
+        "max": 352.03125,
+        "median": 347.921875,
+        "min": 347.640625
+      },
+      "fft_prediction_score": 0.9711386772814053,
+      "fft_samples": [
+        {
+          "additional_peak_memory_mib": 246.609375,
+          "baseline_peak_memory_mib": 101.03125,
+          "duration_seconds": 0.16091362503357232,
+          "peak_memory_mib": 347.640625
+        },
+        {
+          "additional_peak_memory_mib": 246.84375,
+          "baseline_peak_memory_mib": 101.078125,
+          "duration_seconds": 0.15955862496048212,
+          "peak_memory_mib": 347.921875
+        },
+        {
+          "additional_peak_memory_mib": 249.265625,
+          "baseline_peak_memory_mib": 102.765625,
+          "duration_seconds": 0.2151960829505697,
+          "peak_memory_mib": 352.03125
+        }
+      ],
+      "fft_seconds": {
+        "max": 0.2151960829505697,
+        "median": 0.16091362503357232,
+        "min": 0.15955862496048212
+      },
+      "fft_setting": "whole-trial",
+      "fit_mode": "fixed",
+      "fs_hz": 128,
+      "kernel_corr": 0.9240148528742641,
+      "lag_matrix_mib": 248.625,
+      "mtrf_additional_peak_mib": {
+        "max": 998.703125,
+        "median": 926.84375,
+        "min": 723.03125
+      },
+      "mtrf_peak_mib": {
+        "max": 1127.5,
+        "median": 1054.9375,
+        "min": 852.546875
+      },
+      "mtrf_prediction_score": 0.8695313524606982,
+      "mtrf_samples": [
+        {
+          "additional_peak_memory_mib": 926.84375,
+          "baseline_peak_memory_mib": 128.09375,
+          "duration_seconds": 5.721189458039589,
+          "peak_memory_mib": 1054.9375
+        },
+        {
+          "additional_peak_memory_mib": 998.703125,
+          "baseline_peak_memory_mib": 128.796875,
+          "duration_seconds": 5.711961916997097,
+          "peak_memory_mib": 1127.5
+        },
+        {
+          "additional_peak_memory_mib": 723.03125,
+          "baseline_peak_memory_mib": 129.515625,
+          "duration_seconds": 5.853288125013933,
+          "peak_memory_mib": 852.546875
+        }
+      ],
+      "mtrf_seconds": {
+        "max": 5.853288125013933,
+        "median": 5.721189458039589,
+        "min": 5.711961916997097
+      },
+      "n_lags": 52,
+      "n_samples": 1024,
+      "n_trials": 6,
+      "name": "102-channel backward decoder",
+      "peak_memory_ratio": 3.032110297750034,
+      "shape": "102->1",
+      "speedup": 35.55441285252225
+    }
+  ]
+}

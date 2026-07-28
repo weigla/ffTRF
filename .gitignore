@@ -5,7 +5,11 @@ __pycache__/
 .coverage
 coverage.xml
 .DS_Store
-artifacts/
+artifacts/*
+!artifacts/runtime_benchmark.md
+!artifacts/runtime_benchmark.json
+!artifacts/real_eeg_benchmark.md
+!artifacts/real_eeg_benchmark.json
 *.egg-info/
 build/
 dist/

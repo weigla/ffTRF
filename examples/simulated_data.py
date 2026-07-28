@@ -30,15 +30,10 @@ class SimulatedTRFDataset:
 
 
 def require_matplotlib():
-    """Import `matplotlib.pyplot` with a helpful error if missing."""
+    """Import the plotting interface used by the examples."""
 
-    try:
-        import matplotlib.pyplot as plt
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "matplotlib is required for the example plots. "
-            "Install the compare extras or use the Pixi compare environment."
-        ) from exc
+    import matplotlib.pyplot as plt
+
     return plt
 
 

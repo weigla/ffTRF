@@ -1,7 +1,6 @@
-"""Shared plotting helpers for TRF estimators.
+"""Shared Matplotlib plotting helpers for TRF estimators.
 
-Plotting is kept optional so the core toolbox does not require matplotlib at
-install time. Estimator methods call into this module lazily.
+Estimator methods import this module lazily to keep package startup lightweight.
 """
 
 from __future__ import annotations
@@ -668,11 +667,6 @@ def _plot_complex_frequency_series(
 
 
 def _require_matplotlib() -> Any:
-    try:
-        import matplotlib.pyplot as plt
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "matplotlib is required for plotting. Install matplotlib directly "
-            "or use the compare environment / compare extras."
-        ) from exc
+    import matplotlib.pyplot as plt
+
     return plt

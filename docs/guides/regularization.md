@@ -1,16 +1,34 @@
 # Regularization and Cross-Validation
 
-`TRF.train(...)` supports both direct fixed-ridge fitting and cross-validated
-regularization search.
+`TRF.train(...)` supports direct fixed-ridge fitting and cross-validated
+regularization search. Cross-validation chooses a setting from the supplied
+training trials; it does not replace evaluation on independent held-out data.
 
-## Scalar Ridge
+## Before Choosing a Ridge Grid
+
+Ridge values are tied to the scale of the predictors and targets. Multiplying a
+predictor by 100 changes the useful range of regularization values and the units
+of its recovered kernel.
+
+For multifeature models, put comparable predictors on intentional scales before
+fitting. A common approach is to estimate a mean and scale from the training
+data, apply that transformation to the training trials, and reuse the same
+values for validation and held-out data. Do not independently learn a
+normalization from every validation or test set unless per-trial normalization
+is part of the scientific definition of the signal.
+
+There is therefore no universal default ridge grid. Start broadly on a
+logarithmic scale, inspect the CV curve, and extend the grid if the best value is
+at an endpoint.
+
+## Direct Fixed-Ridge Fit
 
 Pass one scalar to fit directly:
 
 ```python
 model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=train_stimulus,
+    response=train_response,
     fs=fs,
     tmin=0.0,
     tmax=0.120,
@@ -18,22 +36,17 @@ model.train(
 )
 ```
 
-Use this when:
+Use this when the value was fixed in advance, inherited from a previous
+independent analysis, or is part of a frozen reproducible pipeline. In this mode
+`train(...)` returns `None` because no validation run is requested.
 
-- you already know a sensible ridge value from previous experiments
-- you want the fastest possible fit
-- you are running a reproducible pipeline with fixed hyperparameters
-
-In this mode, `train(...)` returns `None` because no validation run is
-requested.
-
-If you want to score that fixed ridge value with cross-validation before the
-final refit, keep the scalar `regularization` and set `k` explicitly:
+To evaluate one fixed value with cross-validation before the final refit, set
+`k` explicitly:
 
 ```python
 scores = model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=train_stimulus,
+    response=train_response,
     fs=fs,
     tmin=0.0,
     tmax=0.120,
@@ -42,110 +55,175 @@ scores = model.train(
 )
 ```
 
-This returns a one-entry cross-validation score array for the single evaluated
-candidate and then refits the final model on all supplied trials using that same ridge
-value.
+This returns a one-entry score array and then refits the final model on all
+supplied training trials using the same ridge value.
 
 ## Cross-Validated Search
 
 Pass a 1D grid to evaluate multiple candidates:
 
 ```python
+grid = np.logspace(-6, 2, 9)
 scores = model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=train_stimulus,
+    response=train_response,
     fs=fs,
     tmin=0.0,
     tmax=0.120,
-    regularization=np.logspace(-6, 0, 7),
-    k=4,
-    segment_duration=1.024,
-    overlap=0.5,
+    regularization=grid,
+    k=5,
 )
+
+best_index = int(np.argmax(scores))
+print(grid[best_index], model.regularization)
 ```
 
 In this mode:
 
-- one score is computed per candidate regularization value
-- the best candidate is chosen automatically
-- the final model is refit on all supplied trials using that best candidate
-- the candidate grid is stored in `model.regularization_candidates`
+- one validation score is computed per candidate and output reduction
+- the best candidate is selected automatically
+- the final model is refit on all supplied training trials
+- the grid is stored in `model.regularization_candidates`
+- the selected value is stored in `model.regularization`
 
-Internally, `ffTRF` builds the trial spectra once, then reuses them across
-folds and regularization candidates. During validation scoring it also caches
-predictor FFTs within each fold, so repeated candidate evaluation avoids
-rebuilding the same prediction-side transforms. This applies to both scalar
-ridge and banded regularization searches and does not change the selected
-solution or the returned scores.
+`ffTRF` caches per-trial spectra and validation predictor FFTs across candidates
+and folds. This changes the runtime, not the scores or selected solution.
+
+## What Counts as a Fold
+
+Cross-validation folds contain whole arrays from the supplied trial list:
+
+- `k="loo"` or `k=-1` leaves out one trial at a time
+- `k=4`, `k=5`, and similar values divide trials into that many folds
+- `seed` controls the optional trial-order shuffle before folds are created
+
+The trial list must represent scientifically defensible exchangeable or
+independent units. Repeated segments from the same subject, recording, story,
+or stimulus can remain highly dependent.
+
+For one continuous recording, create blocks that respect temporal dependence
+and experimental boundaries. Randomly interleaving adjacent chunks between
+training and validation can inflate scores because slow neural activity,
+stimulus autocorrelation, and preprocessing state are shared across folds.
+Where appropriate, leave out an entire run, stimulus, session, or subject.
+
+Preprocessing must follow the same separation. Any data-driven scaling,
+feature selection, artifact threshold, or other fitted transformation should be
+estimated inside the training portion of each fold when it could otherwise
+leak information.
+
+## CV Scores Are Not Final Performance
+
+The maximum CV score is optimistic because it was used to choose the model.
+Report predictive performance on data that did not participate in:
+
+- fitting the kernel
+- selecting regularization
+- choosing segment or multitaper settings
+- selecting predictors, channels, or lag windows
+
+A simple workflow uses training trials for CV and a separate test set for the
+final score. If all observations must contribute to both selection and
+evaluation, use nested cross-validation: the inner loop selects regularization
+and the outer loop estimates generalization.
+
+## Choosing the Selection Metric
+
+The estimator's `metric` is used during CV:
+
+```python
+model = TRF(direction=1, metric="neg_mse")
+```
+
+Choose it to match the scientific objective:
+
+- `pearsonr` measures temporal tracking but is insensitive to multiplicative
+  prediction scale and constant offsets
+- `neg_mse` rewards calibrated predictions and follows the larger-is-better
+  convention
+- `r2` compares residual error with a constant-mean baseline and may be
+  negative on difficult held-out data
+- `explained_variance` focuses on residual variance rather than absolute error
+
+It is reasonable to select with one prespecified metric and report additional
+held-out metrics, but do not choose whichever metric looks best after seeing
+the test data.
 
 ## The Meaning of `average`
 
-The `average` argument controls how scores are reduced across outputs:
+`average` controls reduction across output channels:
 
-- `average=True`: return one score per regularization candidate
-- `average=False`: keep one score per output
-- `average=[...]`: average only over the listed outputs
+- `average=True` returns one score per candidate, averaged across all outputs
+- `average=[0, 3, 5]` selects using only the listed outputs
+- `average=False` returns one score per candidate and output
 
-This matters when different output channels behave differently. For example,
-you might want to select regularization based only on a subset of channels.
+`average=False` is diagnostic: the final model still uses one global
+regularization candidate, selected by the mean score across outputs. It does
+not select a separate ridge value for each response channel. To base selection
+on a prespecified channel subset, pass those indices as `average=[...]`.
 
-## The Meaning of `k`
+Scores are first calculated per validation trial and then averaged equally
+across trials. A long trial does not automatically receive more weight than a
+short trial.
 
-- `k="loo"` or `k=-1`: leave-one-out over trials
-- `k=4`, `k=5`, ...: split trials into that many folds
+## How Trials and Segments Are Weighted
 
-Use leave-one-out when trial count is small and you want maximal use of the
-data per fold. Use a smaller number of folds when trial count is large and
-runtime matters more.
+With `trial_weights=None`, each training trial contributes equally to the
+aggregate spectral statistics. When a trial contains several FFT segments,
+those segments divide that trial's contribution equally. Consequently,
+unequal-length trials do not contribute in direct proportion to their sample
+counts.
+
+This behavior makes the supplied trial the unit of analysis. Use explicit trial
+weights only when a different contribution is scientifically justified; see
+[Trial Weighting and Bootstrap](trial-weighting-and-bootstrap.md).
 
 ## Banded Regularization
 
-If your predictor contains grouped features, provide `bands` so each group can
-receive its own ridge coefficient:
+Grouped predictors can receive separate ridge coefficients:
 
 ```python
 model.train(
-    stimulus=stimulus,
-    response=response,
+    stimulus=train_stimulus,
+    response=train_response,
     fs=fs,
     tmin=0.0,
     tmax=0.120,
-    regularization=np.logspace(-5, 0, 5),
+    regularization=np.logspace(-5, 1, 7),
     bands=[1, 16],
-    k=4,
+    k=5,
 )
 ```
 
-Example interpretation of `bands=[1, 16]`:
+Here the first feature is one group and the next 16 features form another.
+Feature scaling remains important: banded ridge can accommodate different
+penalty strengths, but it does not make arbitrary feature units comparable.
+The number of band combinations also grows quickly, so use a held-out test set
+and avoid treating the best inner-CV score as final evidence.
 
-- first feature belongs to group 1
-- next 16 features belong to group 2
+## Segment Settings Are Hyperparameters Too
 
-In banded mode, `ffTRF` expands the chosen coefficients into a per-feature
-penalty vector internally. Cross-validation still reuses the same cached fold
-spectra and validation predictor FFTs, so the banded search stays much cheaper
-than rebuilding the full prediction path from scratch for every candidate.
+Segment length, overlap, windowing, and multitaper settings change the spectral
+estimator:
 
-## Segment Choices Matter Too
+- longer segments provide finer frequency resolution
+- shorter segments provide more local spectral estimates but less frequency
+  resolution
+- overlapping segments are not independent observations
+- windowing can reduce leakage at the cost of changing spectral weighting
 
-Regularization is not the only stability control. Segment settings matter as
-well:
+If these settings are chosen by looking at CV or test performance, they are
+part of model selection and must be included in the validation design. See
+[Choosing Segment Settings](choosing-segment-settings.md) for their signal
+processing interpretation.
 
-- longer segments improve frequency resolution
-- shorter segments can increase the number of independent observations
-- overlap can stabilize estimates when segments are short
-- windowing can reduce spectral leakage in the standard estimator
+## Practical Checklist
 
-If a model feels unstable, consider segment settings alongside ridge values.
-The dedicated [Choosing Segment Settings](choosing-segment-settings.md) guide
-collects the practical rules of thumb in one place.
-
-## Practical Advice
-
-- Use direct fitting when you already know a sensible ridge value.
-- Use `k="loo"` when you have only a small number of trials.
-- Use `k=4` or `k=5` when trial count is larger and runtime matters more.
-- Use longer segments when you care about lag resolution and narrower spectral
-  smoothing.
-- Start with a broad log-spaced grid, then narrow it once you know the useful
-  range for your data.
+1. Define the independent trial, run, session, stimulus, or subject unit.
+2. Reserve the final test data before choosing settings.
+3. Fit preprocessing only on training data where applicable.
+4. Choose a metric that matches the analysis goal.
+5. Search a broad log-spaced ridge grid.
+6. Check that the optimum is not pinned to a grid boundary.
+7. Refit on all training data with the selected value.
+8. Report the untouched held-out score and the complete selection procedure.

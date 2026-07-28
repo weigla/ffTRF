@@ -79,6 +79,7 @@ jobs:
             examples/example_frequency_resolved_weights.py \
             examples/example_backward_decoding.py \
             examples/example_bootstrap_confidence_interval.py \
+            examples/example_permutation_significance.py \
             examples/example_trial_weighting.py \
             examples/example_save_and_load.py
           do

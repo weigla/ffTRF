@@ -94,4 +94,4 @@ The estimator also exposes direct frequency-domain views:
 - `plot_cross_spectrum(...)`
 
 If you want the same workflow in a more tutorial-like format, see the rendered
-[Frequency-Resolved Notebook](../../notebooks/frequency-resolved/).
+[Frequency-Resolved Notebook](../notebooks/frequency-resolved.ipynb).

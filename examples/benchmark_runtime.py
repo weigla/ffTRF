@@ -17,16 +17,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
-from statistics import median
-from subprocess import DEVNULL, CalledProcessError, check_output
+from subprocess import check_output
 from time import perf_counter
+from typing import Any
 
 import numpy as np
 
@@ -36,9 +35,23 @@ EXAMPLES_DIR = Path(__file__).resolve().parent
 if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
+from benchmark_utils import (  # noqa: E402
+    additional_peak_memory_mib,
+    current_process_peak_memory_mib,
+    environment_metadata,
+    format_median_range,
+    isolated_worker_environment,
+    replace_marked_section,
+    summarize,
+)
 from comparison_utils import default_kernel  # noqa: E402
 
 _MTRF_TRF = None
+REPO_ROOT = EXAMPLES_DIR.parent
+DEFAULT_OUTPUT = Path("artifacts/runtime_benchmark.md")
+DEFAULT_JSON_OUTPUT = Path("artifacts/runtime_benchmark.json")
+README_START_MARKER = "<!-- RUNTIME_BENCHMARK_SUMMARY_START -->"
+README_END_MARKER = "<!-- RUNTIME_BENCHMARK_SUMMARY_END -->"
 
 
 @dataclass(slots=True)
@@ -68,12 +81,7 @@ class BenchmarkScenario:
 
     @property
     def lag_matrix_mebibytes(self) -> float:
-        n_elements = (
-            self.n_trials
-            * self.n_samples
-            * self.n_lags
-            * self.n_predictors
-        )
+        n_elements = self.n_trials * self.n_samples * self.n_lags * self.n_predictors
         return n_elements * np.dtype(np.float64).itemsize / (1024.0**2)
 
     @property
@@ -117,9 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Create the CLI parser."""
 
     parser = argparse.ArgumentParser(
-        description=(
-            "Benchmark ffTRF against mTRF and emit a Markdown summary."
-        )
+        description=("Benchmark ffTRF against mTRF and emit a Markdown summary.")
     )
     parser.add_argument(
         "--repeats",
@@ -136,8 +142,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("artifacts/runtime_benchmark.md"),
-        help="Markdown file where the benchmark report should be written.",
+        default=DEFAULT_OUTPUT,
+        help=f"Markdown report path (default: {DEFAULT_OUTPUT}).",
+    )
+    parser.add_argument(
+        "--json-output",
+        type=Path,
+        default=DEFAULT_JSON_OUTPUT,
+        help=f"Raw JSON report path (default: {DEFAULT_JSON_OUTPUT}).",
+    )
+    parser.add_argument(
+        "--readme-summary",
+        type=Path,
+        default=None,
+        help="README whose generated synthetic summary block should be updated.",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="Native BLAS/OpenMP threads per isolated worker.",
     )
     parser.add_argument(
         "--worker-scenario-index",
@@ -154,32 +178,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def current_process_peak_memory_mib() -> float:
-    """Return peak resident memory for the current process in MiB when possible."""
-
-    try:
-        import resource
-    except ModuleNotFoundError:
-        return float("nan")
-
-    peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if sys.platform == "darwin":
-        return float(peak_rss) / (1024.0**2)
-    return float(peak_rss) / 1024.0
-
-
 def benchmark_worker(
     scenario_index: int,
     *,
     method: str,
     repeats: int,
     warmup: int,
-) -> tuple[list[float], list[float]]:
-    """Run isolated worker processes and return durations and peak memory."""
+    threads: int,
+) -> list[dict[str, float]]:
+    """Run isolated worker processes and return their raw measurements."""
 
     script_path = Path(__file__).resolve()
-    durations = []
-    peak_memories = []
+    payloads = []
     for run_index in range(repeats + warmup):
         output = check_output(
             [
@@ -191,12 +201,12 @@ def benchmark_worker(
                 method,
             ],
             text=True,
+            env=isolated_worker_environment(threads=threads),
         )
         payload = json.loads(output.strip().splitlines()[-1])
         if run_index >= warmup:
-            durations.append(float(payload["duration_seconds"]))
-            peak_memories.append(float(payload["peak_memory_mib"]))
-    return durations, peak_memories
+            payloads.append({key: float(value) for key, value in payload.items()})
+    return payloads
 
 
 def fit_frequency_trf(
@@ -270,25 +280,6 @@ def safe_corrcoef(a: np.ndarray, b: np.ndarray) -> float:
     if np.allclose(a, a[0]) or np.allclose(b, b[0]):
         return 0.0
     return float(np.corrcoef(a, b)[0, 1])
-
-
-def cpu_name() -> str:
-    """Return a concise CPU identifier when available."""
-
-    for command in (
-        ["sysctl", "-n", "machdep.cpu.brand_string"],
-        ["bash", "-lc", "lscpu | awk -F: '/Model name/ {print $2}' | xargs"],
-    ):
-        try:
-            output = check_output(command, stderr=DEVNULL, text=True).strip()
-        except (CalledProcessError, FileNotFoundError):
-            continue
-        if output:
-            return output
-    processor = platform.processor().strip()
-    if processor:
-        return processor
-    return platform.machine()
 
 
 def default_scenarios() -> list[BenchmarkScenario]:
@@ -511,15 +502,22 @@ def run_worker_once(
     if method == "mtrf":
         get_mtrf_class()
 
+    baseline_peak_memory_mib = current_process_peak_memory_mib()
     start = perf_counter()
     if method == "fft":
         fit_frequency_trf(stimulus, response, scenario)
     else:
         fit_mtrf(stimulus, response, scenario)
     duration = perf_counter() - start
+    peak_memory_mib = current_process_peak_memory_mib()
     return {
         "duration_seconds": duration,
-        "peak_memory_mib": current_process_peak_memory_mib(),
+        "baseline_peak_memory_mib": baseline_peak_memory_mib,
+        "peak_memory_mib": peak_memory_mib,
+        "additional_peak_memory_mib": additional_peak_memory_mib(
+            before=baseline_peak_memory_mib,
+            after=peak_memory_mib,
+        ),
     }
 
 
@@ -529,7 +527,8 @@ def run_scenario(
     scenario_index: int,
     repeats: int,
     warmup: int,
-) -> dict[str, float | str | int]:
+    threads: int,
+) -> dict[str, Any]:
     """Run one scenario and return a summary row."""
 
     kernel_bank = build_kernel_bank(scenario)
@@ -540,17 +539,19 @@ def run_scenario(
         seed=scenario.seed + 10_000,
     )
 
-    fft_durations, fft_peak_memories = benchmark_worker(
+    fft_payloads = benchmark_worker(
         scenario_index,
         method="fft",
         repeats=repeats,
         warmup=warmup,
+        threads=threads,
     )
-    mtrf_durations, mtrf_peak_memories = benchmark_worker(
+    mtrf_payloads = benchmark_worker(
         scenario_index,
         method="mtrf",
         repeats=repeats,
         warmup=warmup,
+        threads=threads,
     )
 
     fft_model = fit_frequency_trf(stimulus, response, scenario)
@@ -578,57 +579,85 @@ def run_scenario(
         "n_samples": scenario.n_samples,
         "n_lags": scenario.n_lags,
         "lag_matrix_mib": scenario.lag_matrix_mebibytes,
-        "fft_seconds": median(fft_durations),
-        "fft_peak_mib": median(fft_peak_memories),
-        "mtrf_seconds": median(mtrf_durations),
-        "mtrf_peak_mib": median(mtrf_peak_memories),
-        "speedup": median(mtrf_durations) / median(fft_durations),
+        "fft_seconds": summarize([payload["duration_seconds"] for payload in fft_payloads]),
+        "fft_peak_mib": summarize([payload["peak_memory_mib"] for payload in fft_payloads]),
+        "fft_additional_peak_mib": summarize(
+            [payload["additional_peak_memory_mib"] for payload in fft_payloads]
+        ),
+        "mtrf_seconds": summarize([payload["duration_seconds"] for payload in mtrf_payloads]),
+        "mtrf_peak_mib": summarize([payload["peak_memory_mib"] for payload in mtrf_payloads]),
+        "mtrf_additional_peak_mib": summarize(
+            [payload["additional_peak_memory_mib"] for payload in mtrf_payloads]
+        ),
+        "speedup": (
+            summarize([payload["duration_seconds"] for payload in mtrf_payloads])["median"]
+            / summarize([payload["duration_seconds"] for payload in fft_payloads])["median"]
+        ),
+        "peak_memory_ratio": (
+            summarize([payload["peak_memory_mib"] for payload in mtrf_payloads])["median"]
+            / summarize([payload["peak_memory_mib"] for payload in fft_payloads])["median"]
+        ),
         "fft_prediction_score": fft_prediction_score,
         "mtrf_prediction_score": mtrf_prediction_score,
         "kernel_corr": safe_corrcoef(fft_model.weights, mtrf_kernel),
+        "fft_samples": fft_payloads,
+        "mtrf_samples": mtrf_payloads,
     }
 
 
 def format_report(
-    rows: list[dict[str, float | str | int]],
+    rows: list[dict[str, Any]],
     *,
     repeats: int,
     warmup: int,
+    threads: int,
+    environment: dict[str, Any],
 ) -> str:
     """Render the benchmark results as Markdown."""
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    python_version = platform.python_version()
-    numpy_version = metadata.version("numpy")
-    scipy_version = metadata.version("scipy")
-    mtrf_version = metadata.version("mtrf")
 
     lines = [
         "# Runtime benchmark",
         "",
-        f"Generated: {timestamp}",
+        "Synthetic scaling and crossover scenarios for ffTRF and mTRF.",
         "",
-        "Environment:",
-        f"- CPU: {cpu_name()}",
-        f"- Platform: {platform.platform()}",
-        f"- Python: {python_version}",
-        f"- NumPy: {numpy_version}",
-        f"- SciPy: {scipy_version}",
-        f"- mTRF: {mtrf_version}",
-        f"- Timed repetitions: {repeats}",
-        f"- Warmup runs: {warmup}",
-        "- Peak memory: median per-fit peak RSS measured in isolated worker processes",
+        "## Environment and provenance",
         "",
+        f"- Generated: {timestamp}",
+        f"- Source: {environment['source']}",
+        f"- CPU: {environment['cpu']}",
+        f"- Platform: {environment['platform']}",
+        f"- Machine: {environment['machine']}",
+        f"- Python: {environment['python']}",
+        f"- ffTRF: {environment['fftrf']}",
+        f"- mTRF: {environment['mtrf']}",
+        f"- NumPy: {environment['numpy']}",
+        f"- SciPy: {environment['scipy']}",
+        f"- Native threads per worker: {threads}",
+        "",
+        "## Protocol",
+        "",
+        "- Command: `pixi run -e compare benchmark-demo`",
         "Each row uses the same simulated data for both methods. Forward rows fit",
         "predictor-to-response TRFs, while backward rows fit response-to-predictor",
         "decoders. Fixed-ridge scenarios use the same lambda in both toolboxes,",
         "and the cross-validated scenario uses the same candidate grid, seed,",
         "and Python-random fold shuffle in both.",
+        f"Fit time is the median and [minimum, maximum] of {repeats} isolated",
+        f"fit-only run(s), following {warmup} unreported warmup run(s).",
         "Held-out prediction scores are mean Pearson correlations over outputs.",
         "Kernel correlation is computed over the flattened full kernel bank.",
+        "Total peak RSS includes the interpreter, imports, and simulated data.",
+        "Additional peak RSS is growth above the process peak immediately before fitting.",
         "",
-        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Lag matrix size (MiB) | ffTRF median fit (s) | ffTRF peak RSS (MiB) | mTRF median fit (s) | mTRF peak RSS (MiB) | Speedup | ffTRF held-out r | mTRF held-out r | Kernel corr. |",
-        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "Ratios are `mTRF / ffTRF`; values above 1 favor ffTRF, while values",
+        "below 1 favor mTRF.",
+        "",
+        "## Results",
+        "",
+        "| Scenario | Direction | Shape | Fit mode | FFT setting | fs (Hz) | Trials | Samples/trial | Lags | Implied lag matrix (MiB) | ffTRF fit s median [range] | mTRF fit s median [range] | Runtime ratio | ffTRF total peak MiB median [range] | mTRF total peak MiB median [range] | Peak RSS ratio | ffTRF additional peak MiB median [range] | mTRF additional peak MiB median [range] | Held-out r ffTRF / mTRF | Kernel corr. |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
 
     for row in rows:
@@ -644,12 +673,15 @@ def format_report(
             f"{row['n_samples']} | "
             f"{row['n_lags']} | "
             f"{row['lag_matrix_mib']:.1f} | "
-            f"{row['fft_seconds']:.4f} | "
-            f"{row['fft_peak_mib']:.1f} | "
-            f"{row['mtrf_seconds']:.4f} | "
-            f"{row['mtrf_peak_mib']:.1f} | "
-            f"{row['speedup']:.2f}x | "
-            f"{row['fft_prediction_score']:.4f} | "
+            f"{format_median_range(row['fft_seconds'], precision=4)} | "
+            f"{format_median_range(row['mtrf_seconds'], precision=4)} | "
+            f"{row['speedup']:.2f}× | "
+            f"{format_median_range(row['fft_peak_mib'], precision=1)} | "
+            f"{format_median_range(row['mtrf_peak_mib'], precision=1)} | "
+            f"{row['peak_memory_ratio']:.2f}× | "
+            f"{format_median_range(row['fft_additional_peak_mib'], precision=1)} | "
+            f"{format_median_range(row['mtrf_additional_peak_mib'], precision=1)} | "
+            f"{row['fft_prediction_score']:.4f} / "
             f"{row['mtrf_prediction_score']:.4f} | "
             f"{row['kernel_corr']:.4f} |"
         )
@@ -667,10 +699,46 @@ def format_report(
             "- The segmented Hann scenario is intentionally not the closest mTRF-like setting; it shows the cost of a more typical spectral-estimation workflow.",
             "- The EEG-scale forward and 102-channel backward rows show how the trade-off changes once the output side becomes sensor-rich or the backward decoder has many predictor channels.",
             "- Memory is part of the story: the main practical advantage of ffTRF often shows up as a combination of competitive runtime and much lower peak RSS once the implied lag matrix would become large.",
-            "- Peak RSS is measured per fit in a fresh worker process, so the reported memory is not inflated by earlier benchmark runs.",
+            "- Peak RSS is measured per fit in a fresh worker process. Total and additional peaks are both reported so process overhead is not mistaken for fit allocation.",
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def render_readme_summary(rows: list[dict[str, Any]]) -> str:
+    """Render the compact generated crossover table for the README."""
+
+    selected_names = (
+        "Moderate length",
+        "Longer lag window",
+        "Cross-validated ridge",
+        "102-channel backward decoder",
+    )
+    rows_by_name = {str(row["name"]): row for row in rows}
+    lines = [
+        "| Workload | Shape and fit | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Correctness check |",
+        "| --- | --- | ---: | ---: | --- |",
+    ]
+    for name in selected_names:
+        row = rows_by_name[name]
+        correctness = (
+            f"held-out r {row['fft_prediction_score']:.4f} / {row['mtrf_prediction_score']:.4f}"
+        )
+        lines.append(
+            f"| {name} | {row['shape']}, {row['fit_mode']} | "
+            f"{row['speedup']:.2f}× | {row['peak_memory_ratio']:.2f}× | "
+            f"{correctness} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Ratios above 1 favor ffTRF; ratios below 1 favor mTRF. The small",
+            "fixed-ridge row is included deliberately: ffTRF is not universally",
+            "faster. Savings emerge as lag count, CV work, or predictor dimension",
+            "makes explicit lag-matrix construction expensive.",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def main() -> None:
@@ -686,9 +754,7 @@ def main() -> None:
             try:
                 metadata.version("mtrf")
             except metadata.PackageNotFoundError as exc:
-                raise SystemExit(
-                    "mTRF is required for the mTRF benchmark worker."
-                ) from exc
+                raise SystemExit("mTRF is required for the mTRF benchmark worker.") from exc
         payload = run_worker_once(
             args.worker_scenario_index,
             method=args.worker_method,
@@ -696,12 +762,19 @@ def main() -> None:
         sys.stdout.write(json.dumps(payload) + "\n")
         return
 
+    if args.repeats < 1:
+        parser.error("--repeats must be at least 1")
+    if args.warmup < 0:
+        parser.error("--warmup must be non-negative")
+    if args.threads < 1:
+        parser.error("--threads must be at least 1")
+
     try:
         metadata.version("mtrf")
     except metadata.PackageNotFoundError as exc:
         raise SystemExit(
             "mTRF is required for this benchmark. Install it with "
-            '`pip install mtrf` or use `pixi run -e compare`.'
+            "`pip install mtrf` or use `pixi run -e compare`."
         ) from exc
 
     rows = [
@@ -710,15 +783,53 @@ def main() -> None:
             scenario_index=index,
             repeats=args.repeats,
             warmup=args.warmup,
+            threads=args.threads,
         )
         for index, scenario in enumerate(default_scenarios())
     ]
-    report = format_report(rows, repeats=args.repeats, warmup=args.warmup)
+    environment = environment_metadata(repo_root=REPO_ROOT, threads=int(args.threads))
+    report = format_report(
+        rows,
+        repeats=args.repeats,
+        warmup=args.warmup,
+        threads=args.threads,
+        environment=environment,
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(report, encoding="utf-8")
+    args.json_output.parent.mkdir(parents=True, exist_ok=True)
+    args.json_output.write_text(
+        json.dumps(
+            {
+                "generated_utc": datetime.now(timezone.utc).isoformat(),
+                "environment": environment,
+                "protocol": {
+                    "command": "pixi run -e compare benchmark-demo",
+                    "repeats": int(args.repeats),
+                    "warmup": int(args.warmup),
+                    "native_threads_per_worker": int(args.threads),
+                },
+                "rows": rows,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if args.readme_summary is not None:
+        replace_marked_section(
+            args.readme_summary,
+            start_marker=README_START_MARKER,
+            end_marker=README_END_MARKER,
+            content=render_readme_summary(rows),
+        )
     sys.stdout.write(report)
     print(f"\nSaved report to {args.output}")
+    print(f"Saved raw measurements to {args.json_output}")
+    if args.readme_summary is not None:
+        print(f"Updated {args.readme_summary}")
 
 
 if __name__ == "__main__":

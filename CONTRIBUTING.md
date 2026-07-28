@@ -32,12 +32,13 @@ pixi shell
 
 The main environments are:
 
-- `default`: core runtime dependencies and editable package install.
-- `test`: pytest, coverage, and plotting dependencies used by the test suite.
+- `default`: runtime dependencies, including Matplotlib, and the editable
+  package install.
+- `test`: pytest and coverage tooling used by the test suite.
 - `lint`: Ruff.
 - `package`: build and package metadata checking tools.
 - `docs`: MkDocs and API-reference tooling.
-- `compare`: optional comparison and benchmark dependencies.
+- `compare`: optional `mtrf` comparison and benchmark dependencies.
 
 ## How to do common tasks
 
@@ -120,11 +121,14 @@ the relevant environment. For comparison examples and benchmarks, use the
 
 ```bash
 pixi run -e compare compare-demo
+pixi run -e compare benchmark-demo
 pixi run -e compare real-eeg-benchmark
 ```
 
 Only update benchmark claims or checked-in benchmark artifacts after rerunning
-the relevant benchmark in a documented environment.
+the relevant benchmark in a documented environment. The benchmark tasks write
+raw JSON alongside Markdown and synchronize their generated README tables.
+Run them from a clean source revision for release-facing results.
 
 ### Building and checking the package
 

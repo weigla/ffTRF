@@ -148,76 +148,79 @@ single-lambda fits use a lower-memory aggregate spectral path.
 - Stored lag-domain weights have shape `(n_inputs, n_lags, n_outputs)`.
 - The lag interval is sample based and half-open: `[tmin, tmax)`.
 
-## Real EEG Benchmark
+## When ffTRF Saves Computation
 
-The primary practical benchmark uses the public speech-EEG sample distributed
-with the mTRF ecosystem. Reproduce the practical 2 s Hann ffTRF and mTRF rows
-and write a Markdown report containing runtime, peak RSS, and held-out accuracy:
+ffTRF avoids explicitly constructing the time-lagged predictor matrix. This can
+substantially reduce peak memory and cross-validation time when the
+predictor-lag dimension or regularization grid is large. It is not a universal
+speed win: a small fixed-ridge model can still be faster in a time-domain
+solver.
 
-```bash
-pixi run -e compare python examples/benchmark_real_eeg.py
-```
+The benchmark ratios below are `mTRF / ffTRF`. Values above 1 favor ffTRF;
+values below 1 favor mTRF. Fit time excludes imports, data generation/loading,
+prediction, and plotting. Each method runs in a fresh process with one native
+BLAS/OpenMP thread.
 
-The report is written to `artifacts/real_eeg_benchmark.md`. The first run
-downloads the public sample data into `artifacts/mtrf_data/`.
-Runtime and peak RSS depend on the machine and current system load; selected
-lambdas and held-out accuracy use seeded folds and should remain stable apart
-from small platform-dependent numerical differences.
+### Synthetic Crossover Scenarios
 
-The dataset contains 10 twelve-second segments sampled at 128 Hz. The benchmark
-uses seven segments for training and cross-validation and three held-out
-segments for evaluation. Both toolboxes use the same lag samples, lambda grids,
-seeded folds, `neg_mse` selection metric, and held-out Pearson-correlation
-evaluation.
+<!-- RUNTIME_BENCHMARK_SUMMARY_START -->
+| Workload | Shape and fit | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Correctness check |
+| --- | --- | ---: | ---: | --- |
+| Moderate length | 1->1, fixed | 0.52× | 1.30× | held-out r 0.9990 / 0.9990 |
+| Longer lag window | 1->1, fixed | 4.36× | 5.43× | held-out r 0.9989 / 0.9989 |
+| Cross-validated ridge | 1->1, cv-8 (k=4) | 8.51× | 3.31× | held-out r 0.9989 / 0.9990 |
+| 102-channel backward decoder | 102->1, fixed | 35.55× | 3.03× | held-out r 0.9711 / 0.8695 |
 
-Representative isolated-process results on Apple M3 with Python 3.13,
-NumPy 2.4, SciPy 1.17, and mTRF 2.1.2:
+Ratios above 1 favor ffTRF; ratios below 1 favor mTRF. The small
+fixed-ridge row is included deliberately: ffTRF is not universally
+faster. Savings emerge as lag count, CV work, or predictor dimension
+makes explicit lag-matrix construction expensive.
+<!-- RUNTIME_BENCHMARK_SUMMARY_END -->
 
-### Matched mTRF-Like Configuration
+The full
+[synthetic benchmark report](https://github.com/weigla/ffTRF/blob/main/artifacts/runtime_benchmark.md)
+includes ten workloads, repeated-run ranges, total and additional peak RSS,
+held-out prediction, kernel agreement, raw dimensions, and complete
+environment metadata.
 
-This setting uses whole-trial rectangular spectra in `ffTRF`: no segmentation,
-no windowing, no multitaper smoothing, and no detrending. It is the closest
-parameter match to the finite-lag mTRF fit.
+### Real Speech-EEG Case Study
 
-| Direction | Shape | ffTRF lambda | mTRF lambda | ffTRF mean r | mTRF mean r | ffTRF fit (s) | mTRF fit (s) | ffTRF RSS (MiB) | mTRF RSS (MiB) |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Forward encoding | `16 -> 128` | 10000 | 3162.28 | 0.0296 | 0.0200 | 8.7038 | 3.9760 | 834.3 | 445.4 |
-| Backward decoding | `128 -> 1` | 1000000 | 1000 | 0.0469 | 0.1109 | 15.0707 | 211.3287 | 3222.3 | 3910.7 |
+The real-data benchmark uses seven training/CV and three held-out segments from
+the pinned public mTRF speech-EEG sample. It reports both the closest
+whole-trial solver comparison and a practical ffTRF workflow using 2-second
+Hann windows with 50% overlap.
 
-Interpretation:
+<!-- REAL_EEG_BENCHMARK_SUMMARY_START -->
+| Comparison | Direction | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Held-out r (ffTRF / mTRF) |
+| --- | --- | ---: | ---: | ---: |
+| Matched whole-trial | Forward | 1.02× | 0.59× | 0.0296 / 0.0200 |
+| Matched whole-trial | Backward | 79.79× | 1.15× | 0.0469 / 0.1109 |
+| Practical 2 s Hann | Forward | 2.36× | 1.32× | 0.0367 / 0.0200 |
+| Practical 2 s Hann | Backward | 345.74× | 4.75× | 0.1954 / 0.1109 |
 
-- The forward model is small enough on the predictor-lag side that mTRF remains
-  faster in the strict matched comparison.
-- The backward model is much harder for a time-domain lag matrix because the
-  predictor side has 128 EEG channels; here `ffTRF` is much faster and uses less
-  memory.
-- The matched whole-trial backward `ffTRF` fit is not the most accurate
-  practical setting for this small noisy sample, because cross spectra are estimated from the whole trial. Therefore `ffTRF`tends to overregularize and shows worse prediction accuracy. The more practical appraoch is shown below.
+Ratios above 1 favor ffTRF. Matched rows compare the closest available
+solver settings. Practical rows use 2-second Hann-windowed spectra in
+ffTRF and therefore compare workflows rather than identical estimators.
+<!-- REAL_EEG_BENCHMARK_SUMMARY_END -->
 
-### Practical 2 s Hann Settings
+Held-out correlation is included as a prediction check, not as evidence of
+ground-truth kernel accuracy. The practical rows change ffTRF's spectral
+estimator and must not be interpreted as strict solver-equivalence results.
+See the full
+[real EEG benchmark report](https://github.com/weigla/ffTRF/blob/main/artifacts/real_eeg_benchmark.md)
+for the protocol and repeated measurements.
 
-For this EEG example, 2-second Hann-windowed segments with 50% overlap are more
-useful practical `ffTRF` settings. They change the spectral estimator, so these
-rows are not strict solver-equivalence claims, but they limit the number of
-frequency bins created internally and additionally help with this kind of
-continuous noisy data.
-
-| Model | Configuration | Lambda | Mean held-out r | Median held-out r | CV fit (s) | Peak RSS (MiB) |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Forward ffTRF | whole trial / rectangular | 10000 | 0.0296 | 0.0345 | 8.7038 | 834.3 |
-| Forward ffTRF | 2 s / 50% overlap / Hann | 10000 | 0.0367 | 0.0386 | 2.6262 | 311.2 |
-| Forward mTRF | finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 3.9760 | 445.4 |
-| Backward ffTRF | whole trial / rectangular | 1000000 | 0.0469 | 0.0370 | 15.0707 | 3222.3 |
-| Backward ffTRF | 2 s / 50% overlap / Hann | 1000 | 0.1954 | 0.1762 | 4.0444 | 813.9 |
-| Backward mTRF | finite-lag baseline | 1000 | 0.1109 | 0.1046 | 211.3287 | 3910.7 |
-
-- Using these settings not only helps with computation time and memory-usage, but also improves the accuracy of the resulting kernel.
-
-If you want, you can run the benchmark on your own machine:
+Reproduce both reports and synchronize these generated README tables:
 
 ```bash
+pixi run -e compare benchmark-demo
 pixi run -e compare real-eeg-benchmark
 ```
+
+The Markdown reports are accompanied by raw JSON measurements under
+`artifacts/`. Runtime depends on hardware and system load; the reports record
+the source revision, package versions, platform, CPU, thread limit, and—for the
+real-data benchmark—the pinned dataset commit and SHA-256.
 
 ## License
 

@@ -134,17 +134,20 @@ coherence, or whether the model reproduces the observed output spectrum.
 
 ## 7. Quantify Uncertainty and Significance
 
-If you have multiple trials, you can estimate a trial-bootstrap confidence
-interval:
+If you have multiple exchangeable trials, you can estimate a pointwise
+trial-bootstrap percentile interval:
 
 - during fitting with `bootstrap_samples=...`
 - after fitting with `bootstrap_confidence_interval(...)`
 
 The stored interval can then be shown in kernel plots or extracted with
-`bootstrap_interval_at(...)`.
+`bootstrap_interval_at(...)`. It is not a simultaneous band and does not
+include regularization-selection uncertainty; see
+[Trial Weighting and Bootstrap](trial-weighting-and-bootstrap.md).
 
 If you want to know whether a held-out prediction score beats a surrogate null
-distribution, use `permutation_test(...)` on the evaluation data.
+distribution, use `permutation_test(...)` on the evaluation data. The surrogate
+must respect the exchangeability and temporal structure of the experiment.
 
 If you want the null to include retraining and regularization selection, use
 `refit_permutation_test(...)` with explicit train/test splits.

@@ -4,11 +4,12 @@
 
 The repository is organized around a small set of Pixi environments:
 
-- `default`: editable package install plus core runtime dependencies
-- `test`: adds `matplotlib`, `pytest`, and coverage tooling
+- `default`: editable package install plus runtime dependencies, including
+  Matplotlib
+- `test`: adds `pytest` and coverage tooling
 - `lint`: adds Ruff
 - `package`: adds build and metadata-checking tools for local distribution checks
-- `compare`: adds `matplotlib` and `mtrf`
+- `compare`: adds the optional `mtrf` comparison dependency
 - `docs`: adds MkDocs and API-reference tooling
 
 ## Common Commands
@@ -24,8 +25,15 @@ pixi run -e package package-check
 pixi run -e docs docs-build
 pixi run -e docs docs-serve
 pixi run -e compare compare-demo
+pixi run -e compare benchmark-demo
 pixi run -e compare real-eeg-benchmark
 ```
+
+`benchmark-demo` and `real-eeg-benchmark` write Markdown and raw JSON reports
+under `artifacts/` and synchronize delimited result tables in `README.md`.
+Each measured fit runs in a fresh process with one native numerical-library
+thread. Run both tasks from a clean revision when refreshing release claims;
+the reports record the Git revision and clean/dirty state.
 
 For API behavior changes, the usual check is:
 
@@ -70,7 +78,9 @@ Hatch updates the version file but does not create a Git tag. Update
 `CITATION.CFF` to the same release version, then create and push the matching
 `v<version>` tag before publishing the GitHub Release. The production workflow
 checks that the release tag matches `hatch version` before building or
-uploading artifacts. Both TestPyPI and PyPI publishing use Trusted Publishing.
+uploading artifacts. Before the final release commit, regenerate both benchmark
+reports and review their README summaries. Both TestPyPI and PyPI publishing
+use Trusted Publishing.
 
 ## Package Layout
 

@@ -16,7 +16,7 @@ ROOT = EXAMPLES_DIR.parent
 if str(EXAMPLES_DIR) not in sys.path:
     sys.path.insert(0, str(EXAMPLES_DIR))
 
-from example_mtrf_sample_eeg import (  # noqa: E402
+from compare_real_eeg_with_mtrf import (  # noqa: E402
     _coerce_trial_list,
     _ensure_2d_column_array,
     feature_correlations,

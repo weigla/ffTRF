@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: compare ffTRF and mTRF on the public speech EEG sample."""
+"""Advanced validation: compare ffTRF and mTRF on public speech EEG."""
 
 from __future__ import annotations
 
@@ -13,6 +13,11 @@ from subprocess import check_output
 from time import perf_counter
 
 import numpy as np
+from benchmark_utils import (
+    additional_peak_memory_mib,
+    current_process_peak_memory_mib,
+    isolated_worker_environment,
+)
 from mtrf_sample_data import exact_lag_window_seconds, load_sample_data
 from simulated_data import finalize_figure, require_matplotlib
 
@@ -70,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=0,
         help="Number of untimed isolated warmup runs per toolbox and model direction.",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="Native BLAS/OpenMP threads per isolated benchmark worker.",
     )
     parser.add_argument(
         "--skip-backward",
@@ -149,10 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--backward-window",
         type=str,
         default="none",
-        help=(
-            "Window for optional segmented ffTRF estimation. "
-            "The matched baseline uses 'none'."
-        ),
+        help=("Window for optional segmented ffTRF estimation. The matched baseline uses 'none'."),
     )
     parser.add_argument(
         "--backward-envelope-compression",
@@ -170,58 +178,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     return parser
-
-
-def current_process_peak_memory_mib() -> float:
-    """Return the current-process peak RSS in MiB when available."""
-
-    if sys.platform == "win32":
-        import ctypes
-        from ctypes import wintypes
-
-        class ProcessMemoryCounters(ctypes.Structure):
-            _fields_ = [
-                ("cb", wintypes.DWORD),
-                ("PageFaultCount", wintypes.DWORD),
-                ("PeakWorkingSetSize", ctypes.c_size_t),
-                ("WorkingSetSize", ctypes.c_size_t),
-                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                ("PagefileUsage", ctypes.c_size_t),
-                ("PeakPagefileUsage", ctypes.c_size_t),
-            ]
-
-        counters = ProcessMemoryCounters()
-        counters.cb = ctypes.sizeof(counters)
-        get_current_process = ctypes.windll.kernel32.GetCurrentProcess
-        get_current_process.restype = wintypes.HANDLE
-        get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
-        get_process_memory_info.argtypes = (
-            wintypes.HANDLE,
-            ctypes.POINTER(ProcessMemoryCounters),
-            wintypes.DWORD,
-        )
-        get_process_memory_info.restype = wintypes.BOOL
-        success = get_process_memory_info(
-            get_current_process(),
-            ctypes.byref(counters),
-            counters.cb,
-        )
-        if not success:
-            return float("nan")
-        return float(counters.PeakWorkingSetSize) / (1024.0**2)
-
-    try:
-        import resource
-    except ModuleNotFoundError:
-        return float("nan")
-
-    peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if sys.platform == "darwin":
-        return float(peak_rss) / (1024.0**2)
-    return float(peak_rss) / 1024.0
 
 
 def load_comparison_setup(
@@ -350,7 +306,9 @@ def fit_mtrf(
     else:
         raise ValueError(f"Unsupported comparison metric for mTRF: {metric!r}")
 
-    model = TRF(direction=direction, **({} if metric_callable is None else {"metric": metric_callable}))
+    model = TRF(
+        direction=direction, **({} if metric_callable is None else {"metric": metric_callable})
+    )
     train_kwargs = {
         "stimulus": stimulus,
         "response": response,
@@ -385,6 +343,7 @@ def benchmark_worker(
     backward_overlap: float,
     backward_window: str,
     backward_envelope_compression: float,
+    threads: int = 1,
 ) -> tuple[list[float], list[float]]:
     """Run isolated worker fits and return durations and peak RSS values."""
 
@@ -404,6 +363,7 @@ def benchmark_worker(
         backward_overlap=backward_overlap,
         backward_window=backward_window,
         backward_envelope_compression=backward_envelope_compression,
+        threads=threads,
     )
     return (
         [payload["duration_seconds"] for payload in payloads],
@@ -428,6 +388,7 @@ def benchmark_worker_payloads(
     backward_overlap: float,
     backward_window: str,
     backward_envelope_compression: float,
+    threads: int = 1,
 ) -> list[dict[str, float]]:
     """Run isolated fits and return their complete benchmark payloads."""
 
@@ -465,7 +426,11 @@ def benchmark_worker_payloads(
             "--backward-envelope-compression",
             str(backward_envelope_compression),
         ]
-        output = check_output(command, text=True)
+        output = check_output(
+            command,
+            text=True,
+            env=isolated_worker_environment(threads=threads),
+        )
         payload = json.loads(output.strip().splitlines()[-1])
         if run_index >= warmup:
             payloads.append({key: float(value) for key, value in payload.items()})
@@ -493,16 +458,21 @@ def run_worker_once(
         int(args.backward_regularization_count),
     )
     forward_segment_duration = float(args.forward_segment_duration)
-    forward_window = None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
+    forward_window = (
+        None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
+    )
     backward_segment_duration = float(args.backward_segment_duration)
-    backward_window = None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
+    backward_window = (
+        None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
+    )
 
     if toolbox_name == "mtrf":
-        # Keep optional dependency import and plotting-cache initialization out
+        # Keep the optional mTRF import and plotting-cache initialization out
         # of the fit-only runtime measurement.
         from mtrf import model as _mtrf_model  # noqa: F401
         from mtrf import stats as _mtrf_stats  # noqa: F401
 
+    baseline_peak_memory_mib = current_process_peak_memory_mib()
     start = perf_counter()
     if toolbox_name == "fftrf":
         is_forward = direction == "forward"
@@ -559,6 +529,10 @@ def run_worker_once(
         )
     duration = perf_counter() - start
     peak_memory_mib = current_process_peak_memory_mib()
+    additional_memory_mib = additional_peak_memory_mib(
+        before=baseline_peak_memory_mib,
+        after=peak_memory_mib,
+    )
 
     if direction == "forward":
         prediction, _ = model.predict(
@@ -583,7 +557,9 @@ def run_worker_once(
 
     return {
         "duration_seconds": duration,
+        "baseline_peak_memory_mib": baseline_peak_memory_mib,
         "peak_memory_mib": peak_memory_mib,
+        "additional_peak_memory_mib": additional_memory_mib,
         "regularization": float(model.regularization),
         "mean_correlation": float(np.mean(scores)),
         "median_correlation": float(np.median(scores)),
@@ -754,6 +730,8 @@ def main() -> None:
         payload = run_worker_once(args, method=args.worker_method)
         sys.stdout.write(json.dumps(payload) + "\n")
         return
+    if args.threads < 1:
+        parser.error("--threads must be at least 1")
 
     setup = load_comparison_setup(
         backward_envelope_compression=float(args.backward_envelope_compression),
@@ -775,6 +753,7 @@ def main() -> None:
         backward_overlap=float(args.backward_overlap),
         backward_window=str(args.backward_window),
         backward_envelope_compression=float(args.backward_envelope_compression),
+        threads=int(args.threads),
     )
     mtrf_durations, mtrf_peak_memories = benchmark_worker(
         method="mtrf-forward",
@@ -792,6 +771,7 @@ def main() -> None:
         backward_overlap=float(args.backward_overlap),
         backward_window=str(args.backward_window),
         backward_envelope_compression=float(args.backward_envelope_compression),
+        threads=int(args.threads),
     )
     backward_fftrf_durations = []
     backward_fftrf_peak_memories = []
@@ -800,7 +780,9 @@ def main() -> None:
     backward_regularization_grid = None
     backward_k_folds = None
     forward_segment_duration = float(args.forward_segment_duration)
-    forward_window = None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
+    forward_window = (
+        None if str(args.forward_window).strip().lower() == "none" else str(args.forward_window)
+    )
 
     fftrf_model, fftrf_cv_scores = fit_fftrf(
         setup.train_stimulus,
@@ -812,11 +794,7 @@ def main() -> None:
         k=setup.k_folds,
         seed=setup.cv_seed,
         direction=1,
-        segment_duration=(
-            None
-            if forward_segment_duration <= 0.0
-            else forward_segment_duration
-        ),
+        segment_duration=(None if forward_segment_duration <= 0.0 else forward_segment_duration),
         overlap=None if forward_segment_duration <= 0.0 else float(args.forward_overlap),
         window=None if forward_segment_duration <= 0.0 else forward_window,
         detrend=None,
@@ -880,7 +858,9 @@ def main() -> None:
     backward_tmax = None
     backward_n_lags = None
     backward_segment_duration = float(args.backward_segment_duration)
-    backward_window = None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
+    backward_window = (
+        None if str(args.backward_window).strip().lower() == "none" else str(args.backward_window)
+    )
 
     if not args.skip_backward:
         backward_n_lags, backward_tmax = exact_lag_window_seconds(
@@ -909,6 +889,7 @@ def main() -> None:
             backward_overlap=float(args.backward_overlap),
             backward_window=str(args.backward_window),
             backward_envelope_compression=float(args.backward_envelope_compression),
+            threads=int(args.threads),
         )
         backward_mtrf_durations, backward_mtrf_peak_memories = benchmark_worker(
             method="mtrf-backward",
@@ -926,6 +907,7 @@ def main() -> None:
             backward_overlap=float(args.backward_overlap),
             backward_window=str(args.backward_window),
             backward_envelope_compression=float(args.backward_envelope_compression),
+            threads=int(args.threads),
         )
         backward_fftrf_model, backward_fftrf_cv_scores = fit_fftrf(
             setup.backward_train_stimulus,
@@ -938,9 +920,7 @@ def main() -> None:
             k=backward_k_folds,
             seed=setup.cv_seed,
             segment_duration=(
-                None
-                if backward_segment_duration <= 0.0
-                else backward_segment_duration
+                None if backward_segment_duration <= 0.0 else backward_segment_duration
             ),
             overlap=float(args.backward_overlap),
             window=backward_window,
@@ -976,7 +956,9 @@ def main() -> None:
             predicted_trials=mtrf_backward_prediction,
         )
         backward_trial_index = int(np.argmax(0.5 * (backward_scores + backward_mtrf_scores)))
-        backward_observed = _ensure_2d_column_array(setup.backward_test_stimulus[backward_trial_index])
+        backward_observed = _ensure_2d_column_array(
+            setup.backward_test_stimulus[backward_trial_index]
+        )
         fftrf_backward_trial = _ensure_2d_column_array(
             _coerce_trial_list(fftrf_backward_prediction)[backward_trial_index]
         )
@@ -1006,10 +988,7 @@ def main() -> None:
     print(f"  CV folds: {setup.k_folds}")
     print(f"  CV seed: {setup.cv_seed}")
     print("  regularization selection metric: neg_mse")
-    print(
-        f"  isolated benchmark runs per toolbox: {args.repeats} "
-        f"(warmup: {args.warmup})"
-    )
+    print(f"  isolated benchmark runs per toolbox: {args.repeats} (warmup: {args.warmup})")
     print("Forward comparison")
     if forward_segment_duration <= 0.0:
         print(
@@ -1027,8 +1006,12 @@ def main() -> None:
         )
     print(f"  ffTRF selected lambda: {fftrf_model.regularization}")
     print(f"  mTRF selected lambda: {mtrf_model.regularization}")
-    print(f"  ffTRF CV scores (neg MSE): {np.array2string(np.asarray(fftrf_cv_scores), precision=4)}")
-    print(f"  mTRF CV scores (neg MSE): {np.array2string(np.asarray(mtrf_cv_scores), precision=4)}")
+    print(
+        f"  ffTRF CV scores (neg MSE): {np.array2string(np.asarray(fftrf_cv_scores), precision=4)}"
+    )
+    print(
+        f"  mTRF CV scores (neg MSE): {np.array2string(np.asarray(mtrf_cv_scores), precision=4)}"
+    )
     print(f"  reference channel for prediction trace: {channel_index + 1}")
     print(f"  ffTRF mean held-out channel correlation: {float(fftrf_scores.mean()):.4f}")
     print(f"  mTRF mean held-out channel correlation: {float(mtrf_scores.mean()):.4f}")
@@ -1083,17 +1066,17 @@ def main() -> None:
         )
         print(f"  reference held-out segment for envelope trace: {backward_trial_index + 1}")
         print(f"  ffTRF mean held-out segment correlation: {float(np.mean(backward_scores)):.4f}")
-        print(f"  mTRF mean held-out segment correlation: {float(np.mean(backward_mtrf_scores)):.4f}")
-        print(f"  ffTRF median held-out segment correlation: {float(np.median(backward_scores)):.4f}")
+        print(
+            f"  mTRF mean held-out segment correlation: {float(np.mean(backward_mtrf_scores)):.4f}"
+        )
+        print(
+            f"  ffTRF median held-out segment correlation: {float(np.median(backward_scores)):.4f}"
+        )
         print(
             f"  mTRF median held-out segment correlation: {float(np.median(backward_mtrf_scores)):.4f}"
         )
-        print(
-            f"  ffTRF isolated benchmark CV fit time: {median(backward_fftrf_durations):.4f} s"
-        )
-        print(
-            f"  mTRF isolated benchmark CV fit time: {median(backward_mtrf_durations):.4f} s"
-        )
+        print(f"  ffTRF isolated benchmark CV fit time: {median(backward_fftrf_durations):.4f} s")
+        print(f"  mTRF isolated benchmark CV fit time: {median(backward_mtrf_durations):.4f} s")
         print(f"  ffTRF peak RSS: {median(backward_fftrf_peak_memories):.1f} MiB")
         print(f"  mTRF peak RSS: {median(backward_mtrf_peak_memories):.1f} MiB")
 
@@ -1274,6 +1257,7 @@ def _backward_envelope_target(
         float(compression_exponent),
     )
     return _zscore_columns(compressed)
+
 
 if __name__ == "__main__":
     main()

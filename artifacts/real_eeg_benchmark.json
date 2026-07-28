@@ -1,0 +1,456 @@
+{
+  "environment": {
+    "cpu": "Apple M3",
+    "fftrf": "0.1.0",
+    "machine": "arm64",
+    "mtrf": "2.1.2",
+    "native_threads_per_worker": 1,
+    "numpy": "2.4.2",
+    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "python": "3.13.12",
+    "scipy": "1.17.1",
+    "source": "1df09985750d (dirty)",
+    "thread_environment_variables": [
+      "OMP_NUM_THREADS",
+      "OPENBLAS_NUM_THREADS",
+      "MKL_NUM_THREADS",
+      "VECLIB_MAXIMUM_THREADS",
+      "NUMEXPR_NUM_THREADS"
+    ]
+  },
+  "generated_utc": "2026-07-28T09:44:06.085420+00:00",
+  "protocol": {
+    "command": "pixi run -e compare real-eeg-benchmark",
+    "dataset_commit": "9b89449caaed3a4b7c80ea238a52c34a723cb8de",
+    "dataset_sha256": "5726060e254caac865c5ca7cf56a8218937f4c05b7784fb08d11658748daee36",
+    "native_threads_per_worker": 1,
+    "repeats": 3,
+    "warmup": 0
+  },
+  "rows": [
+    {
+      "additional_peak_memory_mib": {
+        "max": 671.875,
+        "median": 586.390625,
+        "min": 546.875
+      },
+      "configuration": "Matched whole-trial",
+      "direction": "forward",
+      "duration_seconds": {
+        "max": 5.077066625002772,
+        "median": 5.034080833080225,
+        "min": 5.004688709042966
+      },
+      "mean_correlation": 0.02960991216051105,
+      "median_correlation": 0.0345134755130171,
+      "peak_memory_mib": {
+        "max": 818.078125,
+        "median": 737.078125,
+        "min": 691.96875
+      },
+      "profile": "matched",
+      "regularization": 10000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 671.875,
+          "baseline_peak_memory_mib": 146.203125,
+          "duration_seconds": 5.004688709042966,
+          "mean_correlation": 0.02960991216051105,
+          "median_correlation": 0.0345134755130171,
+          "peak_memory_mib": 818.078125,
+          "regularization": 10000.0
+        },
+        {
+          "additional_peak_memory_mib": 546.875,
+          "baseline_peak_memory_mib": 145.09375,
+          "duration_seconds": 5.077066625002772,
+          "mean_correlation": 0.02960991216051105,
+          "median_correlation": 0.0345134755130171,
+          "peak_memory_mib": 691.96875,
+          "regularization": 10000.0
+        },
+        {
+          "additional_peak_memory_mib": 586.390625,
+          "baseline_peak_memory_mib": 150.6875,
+          "duration_seconds": 5.034080833080225,
+          "mean_correlation": 0.02960991216051105,
+          "median_correlation": 0.0345134755130171,
+          "peak_memory_mib": 737.078125,
+          "regularization": 10000.0
+        }
+      ],
+      "toolbox": "ffTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 262.171875,
+        "median": 261.59375,
+        "min": 260.203125
+      },
+      "configuration": "Finite-lag baseline",
+      "direction": "forward",
+      "duration_seconds": {
+        "max": 5.222531332983635,
+        "median": 5.122692332952283,
+        "min": 5.037312125088647
+      },
+      "mean_correlation": 0.019969613771447195,
+      "median_correlation": 0.017215410712152168,
+      "peak_memory_mib": {
+        "max": 435.0,
+        "median": 433.359375,
+        "min": 431.640625
+      },
+      "profile": "matched",
+      "regularization": 3162.2776601683795,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 262.171875,
+          "baseline_peak_memory_mib": 172.828125,
+          "duration_seconds": 5.037312125088647,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 435.0,
+          "regularization": 3162.2776601683795
+        },
+        {
+          "additional_peak_memory_mib": 260.203125,
+          "baseline_peak_memory_mib": 171.4375,
+          "duration_seconds": 5.222531332983635,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 431.640625,
+          "regularization": 3162.2776601683795
+        },
+        {
+          "additional_peak_memory_mib": 261.59375,
+          "baseline_peak_memory_mib": 171.765625,
+          "duration_seconds": 5.122692332952283,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 433.359375,
+          "regularization": 3162.2776601683795
+        }
+      ],
+      "toolbox": "mTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 182.609375,
+        "median": 176.25,
+        "min": 173.828125
+      },
+      "configuration": "Practical 2 s Hann",
+      "direction": "forward",
+      "duration_seconds": {
+        "max": 2.1880405000410974,
+        "median": 2.174756959080696,
+        "min": 2.1544946250505745
+      },
+      "mean_correlation": 0.03668381382946956,
+      "median_correlation": 0.03861302578952655,
+      "peak_memory_mib": {
+        "max": 344.140625,
+        "median": 327.5,
+        "min": 324.15625
+      },
+      "profile": "practical",
+      "regularization": 10000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 182.609375,
+          "baseline_peak_memory_mib": 161.53125,
+          "duration_seconds": 2.1544946250505745,
+          "mean_correlation": 0.03668381382946956,
+          "median_correlation": 0.03861302578952655,
+          "peak_memory_mib": 344.140625,
+          "regularization": 10000.0
+        },
+        {
+          "additional_peak_memory_mib": 173.828125,
+          "baseline_peak_memory_mib": 150.328125,
+          "duration_seconds": 2.1880405000410974,
+          "mean_correlation": 0.03668381382946956,
+          "median_correlation": 0.03861302578952655,
+          "peak_memory_mib": 324.15625,
+          "regularization": 10000.0
+        },
+        {
+          "additional_peak_memory_mib": 176.25,
+          "baseline_peak_memory_mib": 151.25,
+          "duration_seconds": 2.174756959080696,
+          "mean_correlation": 0.03668381382946956,
+          "median_correlation": 0.03861302578952655,
+          "peak_memory_mib": 327.5,
+          "regularization": 10000.0
+        }
+      ],
+      "toolbox": "ffTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 262.171875,
+        "median": 261.59375,
+        "min": 260.203125
+      },
+      "configuration": "Finite-lag baseline",
+      "direction": "forward",
+      "duration_seconds": {
+        "max": 5.222531332983635,
+        "median": 5.122692332952283,
+        "min": 5.037312125088647
+      },
+      "mean_correlation": 0.019969613771447195,
+      "median_correlation": 0.017215410712152168,
+      "peak_memory_mib": {
+        "max": 435.0,
+        "median": 433.359375,
+        "min": 431.640625
+      },
+      "profile": "practical",
+      "regularization": 3162.2776601683795,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 262.171875,
+          "baseline_peak_memory_mib": 172.828125,
+          "duration_seconds": 5.037312125088647,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 435.0,
+          "regularization": 3162.2776601683795
+        },
+        {
+          "additional_peak_memory_mib": 260.203125,
+          "baseline_peak_memory_mib": 171.4375,
+          "duration_seconds": 5.222531332983635,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 431.640625,
+          "regularization": 3162.2776601683795
+        },
+        {
+          "additional_peak_memory_mib": 261.59375,
+          "baseline_peak_memory_mib": 171.765625,
+          "duration_seconds": 5.122692332952283,
+          "mean_correlation": 0.019969613771447195,
+          "median_correlation": 0.017215410712152168,
+          "peak_memory_mib": 433.359375,
+          "regularization": 3162.2776601683795
+        }
+      ],
+      "toolbox": "mTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 3254.46875,
+        "median": 3202.015625,
+        "min": 3092.953125
+      },
+      "configuration": "Matched whole-trial",
+      "direction": "backward",
+      "duration_seconds": {
+        "max": 7.722112708026543,
+        "median": 7.332585333031602,
+        "min": 7.322893000091426
+      },
+      "mean_correlation": 0.04694686251988586,
+      "median_correlation": 0.03703786454530451,
+      "peak_memory_mib": {
+        "max": 3400.4375,
+        "median": 3352.578125,
+        "min": 3239.96875
+      },
+      "profile": "matched",
+      "regularization": 1000000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 3202.015625,
+          "baseline_peak_memory_mib": 150.5625,
+          "duration_seconds": 7.722112708026543,
+          "mean_correlation": 0.04694686251988586,
+          "median_correlation": 0.03703786454530451,
+          "peak_memory_mib": 3352.578125,
+          "regularization": 1000000.0
+        },
+        {
+          "additional_peak_memory_mib": 3254.46875,
+          "baseline_peak_memory_mib": 145.96875,
+          "duration_seconds": 7.322893000091426,
+          "mean_correlation": 0.04694686251988586,
+          "median_correlation": 0.03703786454530451,
+          "peak_memory_mib": 3400.4375,
+          "regularization": 1000000.0
+        },
+        {
+          "additional_peak_memory_mib": 3092.953125,
+          "baseline_peak_memory_mib": 147.015625,
+          "duration_seconds": 7.332585333031602,
+          "mean_correlation": 0.04694686251988586,
+          "median_correlation": 0.03703786454530451,
+          "peak_memory_mib": 3239.96875,
+          "regularization": 1000000.0
+        }
+      ],
+      "toolbox": "ffTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 3808.015625,
+        "median": 3675.640625,
+        "min": 3620.609375
+      },
+      "configuration": "Finite-lag baseline",
+      "direction": "backward",
+      "duration_seconds": {
+        "max": 619.4001641250215,
+        "median": 585.0948406669777,
+        "min": 517.6117337920005
+      },
+      "mean_correlation": 0.11092862870960751,
+      "median_correlation": 0.10456837744964047,
+      "peak_memory_mib": {
+        "max": 3986.78125,
+        "median": 3852.859375,
+        "min": 3792.171875
+      },
+      "profile": "matched",
+      "regularization": 1000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 3808.015625,
+          "baseline_peak_memory_mib": 178.765625,
+          "duration_seconds": 517.6117337920005,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3986.78125,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 3675.640625,
+          "baseline_peak_memory_mib": 177.21875,
+          "duration_seconds": 585.0948406669777,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3852.859375,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 3620.609375,
+          "baseline_peak_memory_mib": 171.5625,
+          "duration_seconds": 619.4001641250215,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3792.171875,
+          "regularization": 1000.0
+        }
+      ],
+      "toolbox": "mTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 665.90625,
+        "median": 664.109375,
+        "min": 662.984375
+      },
+      "configuration": "Practical 2 s Hann",
+      "direction": "backward",
+      "duration_seconds": {
+        "max": 1.7151092500425875,
+        "median": 1.6923159169964492,
+        "min": 1.6586177500430495
+      },
+      "mean_correlation": 0.1954013835072483,
+      "median_correlation": 0.1762428981097444,
+      "peak_memory_mib": {
+        "max": 812.640625,
+        "median": 810.4375,
+        "min": 808.15625
+      },
+      "profile": "practical",
+      "regularization": 1000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 664.109375,
+          "baseline_peak_memory_mib": 146.328125,
+          "duration_seconds": 1.6923159169964492,
+          "mean_correlation": 0.1954013835072483,
+          "median_correlation": 0.1762428981097444,
+          "peak_memory_mib": 810.4375,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 662.984375,
+          "baseline_peak_memory_mib": 145.171875,
+          "duration_seconds": 1.6586177500430495,
+          "mean_correlation": 0.1954013835072483,
+          "median_correlation": 0.1762428981097444,
+          "peak_memory_mib": 808.15625,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 665.90625,
+          "baseline_peak_memory_mib": 146.734375,
+          "duration_seconds": 1.7151092500425875,
+          "mean_correlation": 0.1954013835072483,
+          "median_correlation": 0.1762428981097444,
+          "peak_memory_mib": 812.640625,
+          "regularization": 1000.0
+        }
+      ],
+      "toolbox": "ffTRF"
+    },
+    {
+      "additional_peak_memory_mib": {
+        "max": 3808.015625,
+        "median": 3675.640625,
+        "min": 3620.609375
+      },
+      "configuration": "Finite-lag baseline",
+      "direction": "backward",
+      "duration_seconds": {
+        "max": 619.4001641250215,
+        "median": 585.0948406669777,
+        "min": 517.6117337920005
+      },
+      "mean_correlation": 0.11092862870960751,
+      "median_correlation": 0.10456837744964047,
+      "peak_memory_mib": {
+        "max": 3986.78125,
+        "median": 3852.859375,
+        "min": 3792.171875
+      },
+      "profile": "practical",
+      "regularization": 1000.0,
+      "samples": [
+        {
+          "additional_peak_memory_mib": 3808.015625,
+          "baseline_peak_memory_mib": 178.765625,
+          "duration_seconds": 517.6117337920005,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3986.78125,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 3675.640625,
+          "baseline_peak_memory_mib": 177.21875,
+          "duration_seconds": 585.0948406669777,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3852.859375,
+          "regularization": 1000.0
+        },
+        {
+          "additional_peak_memory_mib": 3620.609375,
+          "baseline_peak_memory_mib": 171.5625,
+          "duration_seconds": 619.4001641250215,
+          "mean_correlation": 0.11092862870960751,
+          "median_correlation": 0.10456837744964047,
+          "peak_memory_mib": 3792.171875,
+          "regularization": 1000.0
+        }
+      ],
+      "toolbox": "mTRF"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: compare unweighted and trial-weighted fitting."""
+"""Example: assess heuristic inverse-variance trial weighting."""
 
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ def main() -> None:
     test_response = dataset.response[-1]
 
     rng = np.random.default_rng(0)
-    train_response[0] = 3.0 * train_response[0] + 0.80 * rng.standard_normal(train_response[0].shape)
+    # This controlled example makes the source of excess variance known. With
+    # real neural data, high variance can instead reflect meaningful signal.
+    train_response[0] += 20.0 * rng.standard_normal(train_response[0].shape)
 
     trial_weights = inverse_variance_weights(train_response)
 
@@ -68,7 +70,8 @@ def main() -> None:
 
     print("Example: trial weighting")
     print(f"  description: {dataset.description}")
-    print("  note: training trial 1 was deliberately rescaled and made noisier")
+    print("  note: independent noise was deliberately added to training trial 1")
+    print("  caution: total variance is only a defensible noise proxy in this controlled example")
     print(f"  inverse-variance weights: {np.array2string(trial_weights, precision=3)}")
     print(f"  stored weighting mode: {np.array2string(weighted.trial_weights, precision=3)}")
     print(f"  unweighted held-out correlation: {float(unweighted_score):.4f}")
@@ -79,7 +82,7 @@ def main() -> None:
     fig, axes = plt.subplots(3, 1, figsize=(10, 9))
 
     axes[0].bar(np.arange(1, len(trial_weights) + 1), trial_weights, color="#0B6E4F")
-    axes[0].set_title("Inverse-variance trial weights")
+    axes[0].set_title("Heuristic inverse-variance trial weights")
     axes[0].set_xlabel("Training trial")
     axes[0].set_ylabel("Weight")
 
