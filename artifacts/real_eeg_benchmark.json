@@ -1,15 +1,15 @@
 {
   "environment": {
-    "cpu": "Apple M3",
+    "cpu": "AMD EPYC 9334 32-Core Processor",
     "fftrf": "0.1.0",
-    "machine": "arm64",
+    "machine": "x86_64",
     "mtrf": "2.1.2",
     "native_threads_per_worker": 1,
     "numpy": "2.4.2",
-    "platform": "macOS-26.4-arm64-arm-64bit-Mach-O",
+    "platform": "Linux-5.14.0-687.26.1.el9_8.x86_64-x86_64-with-glibc2.34",
     "python": "3.13.12",
     "scipy": "1.17.1",
-    "source": "1df09985750d (dirty)",
+    "source": "e714c712670c (dirty)",
     "thread_environment_variables": [
       "OMP_NUM_THREADS",
       "OPENBLAS_NUM_THREADS",
@@ -18,7 +18,7 @@
       "NUMEXPR_NUM_THREADS"
     ]
   },
-  "generated_utc": "2026-07-28T09:44:06.085420+00:00",
+  "generated_utc": "2026-07-28T11:33:25.499516+00:00",
   "protocol": {
     "command": "pixi run -e compare real-eeg-benchmark",
     "dataset_commit": "9b89449caaed3a4b7c80ea238a52c34a723cb8de",
@@ -30,52 +30,52 @@
   "rows": [
     {
       "additional_peak_memory_mib": {
-        "max": 671.875,
-        "median": 586.390625,
-        "min": 546.875
+        "max": 489.4609375,
+        "median": 489.45703125,
+        "min": 489.45703125
       },
       "configuration": "Matched whole-trial",
       "direction": "forward",
       "duration_seconds": {
-        "max": 5.077066625002772,
-        "median": 5.034080833080225,
-        "min": 5.004688709042966
+        "max": 5.941962960991077,
+        "median": 5.937550917966291,
+        "min": 5.936568541976158
       },
       "mean_correlation": 0.02960991216051105,
-      "median_correlation": 0.0345134755130171,
+      "median_correlation": 0.03451347551301709,
       "peak_memory_mib": {
-        "max": 818.078125,
-        "median": 737.078125,
-        "min": 691.96875
+        "max": 620.70703125,
+        "median": 619.28125,
+        "min": 618.0390625
       },
       "profile": "matched",
       "regularization": 10000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 671.875,
-          "baseline_peak_memory_mib": 146.203125,
-          "duration_seconds": 5.004688709042966,
+          "additional_peak_memory_mib": 489.45703125,
+          "baseline_peak_memory_mib": 128.58203125,
+          "duration_seconds": 5.937550917966291,
           "mean_correlation": 0.02960991216051105,
-          "median_correlation": 0.0345134755130171,
-          "peak_memory_mib": 818.078125,
+          "median_correlation": 0.03451347551301709,
+          "peak_memory_mib": 618.0390625,
           "regularization": 10000.0
         },
         {
-          "additional_peak_memory_mib": 546.875,
-          "baseline_peak_memory_mib": 145.09375,
-          "duration_seconds": 5.077066625002772,
+          "additional_peak_memory_mib": 489.45703125,
+          "baseline_peak_memory_mib": 129.82421875,
+          "duration_seconds": 5.941962960991077,
           "mean_correlation": 0.02960991216051105,
-          "median_correlation": 0.0345134755130171,
-          "peak_memory_mib": 691.96875,
+          "median_correlation": 0.03451347551301709,
+          "peak_memory_mib": 619.28125,
           "regularization": 10000.0
         },
         {
-          "additional_peak_memory_mib": 586.390625,
-          "baseline_peak_memory_mib": 150.6875,
-          "duration_seconds": 5.034080833080225,
+          "additional_peak_memory_mib": 489.4609375,
+          "baseline_peak_memory_mib": 131.24609375,
+          "duration_seconds": 5.936568541976158,
           "mean_correlation": 0.02960991216051105,
-          "median_correlation": 0.0345134755130171,
-          "peak_memory_mib": 737.078125,
+          "median_correlation": 0.03451347551301709,
+          "peak_memory_mib": 620.70703125,
           "regularization": 10000.0
         }
       ],
@@ -83,52 +83,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 262.171875,
-        "median": 261.59375,
-        "min": 260.203125
+        "max": 114.0546875,
+        "median": 113.65625,
+        "min": 113.27734375
       },
       "configuration": "Finite-lag baseline",
       "direction": "forward",
       "duration_seconds": {
-        "max": 5.222531332983635,
-        "median": 5.122692332952283,
-        "min": 5.037312125088647
+        "max": 6.061484278994612,
+        "median": 6.038650068978313,
+        "min": 6.020983426016755
       },
-      "mean_correlation": 0.019969613771447195,
-      "median_correlation": 0.017215410712152168,
+      "mean_correlation": 0.0199696137714472,
+      "median_correlation": 0.017215410712152164,
       "peak_memory_mib": {
-        "max": 435.0,
-        "median": 433.359375,
-        "min": 431.640625
+        "max": 260.3203125,
+        "median": 260.18359375,
+        "min": 259.44140625
       },
       "profile": "matched",
       "regularization": 3162.2776601683795,
       "samples": [
         {
-          "additional_peak_memory_mib": 262.171875,
-          "baseline_peak_memory_mib": 172.828125,
-          "duration_seconds": 5.037312125088647,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 435.0,
+          "additional_peak_memory_mib": 114.0546875,
+          "baseline_peak_memory_mib": 145.38671875,
+          "duration_seconds": 6.020983426016755,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 259.44140625,
           "regularization": 3162.2776601683795
         },
         {
-          "additional_peak_memory_mib": 260.203125,
-          "baseline_peak_memory_mib": 171.4375,
-          "duration_seconds": 5.222531332983635,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 431.640625,
+          "additional_peak_memory_mib": 113.27734375,
+          "baseline_peak_memory_mib": 146.90625,
+          "duration_seconds": 6.061484278994612,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 260.18359375,
           "regularization": 3162.2776601683795
         },
         {
-          "additional_peak_memory_mib": 261.59375,
-          "baseline_peak_memory_mib": 171.765625,
-          "duration_seconds": 5.122692332952283,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 433.359375,
+          "additional_peak_memory_mib": 113.65625,
+          "baseline_peak_memory_mib": 146.6640625,
+          "duration_seconds": 6.038650068978313,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 260.3203125,
           "regularization": 3162.2776601683795
         }
       ],
@@ -136,52 +136,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 182.609375,
-        "median": 176.25,
-        "min": 173.828125
+        "max": 81.125,
+        "median": 80.84765625,
+        "min": 80.17578125
       },
       "configuration": "Practical 2 s Hann",
       "direction": "forward",
       "duration_seconds": {
-        "max": 2.1880405000410974,
-        "median": 2.174756959080696,
-        "min": 2.1544946250505745
+        "max": 2.852669537998736,
+        "median": 2.8469021480414085,
+        "min": 2.834552843007259
       },
       "mean_correlation": 0.03668381382946956,
       "median_correlation": 0.03861302578952655,
       "peak_memory_mib": {
-        "max": 344.140625,
-        "median": 327.5,
-        "min": 324.15625
+        "max": 211.55078125,
+        "median": 211.453125,
+        "min": 210.93359375
       },
       "profile": "practical",
       "regularization": 10000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 182.609375,
-          "baseline_peak_memory_mib": 161.53125,
-          "duration_seconds": 2.1544946250505745,
+          "additional_peak_memory_mib": 80.17578125,
+          "baseline_peak_memory_mib": 130.7578125,
+          "duration_seconds": 2.852669537998736,
           "mean_correlation": 0.03668381382946956,
           "median_correlation": 0.03861302578952655,
-          "peak_memory_mib": 344.140625,
+          "peak_memory_mib": 210.93359375,
           "regularization": 10000.0
         },
         {
-          "additional_peak_memory_mib": 173.828125,
-          "baseline_peak_memory_mib": 150.328125,
-          "duration_seconds": 2.1880405000410974,
+          "additional_peak_memory_mib": 80.84765625,
+          "baseline_peak_memory_mib": 130.60546875,
+          "duration_seconds": 2.834552843007259,
           "mean_correlation": 0.03668381382946956,
           "median_correlation": 0.03861302578952655,
-          "peak_memory_mib": 324.15625,
+          "peak_memory_mib": 211.453125,
           "regularization": 10000.0
         },
         {
-          "additional_peak_memory_mib": 176.25,
-          "baseline_peak_memory_mib": 151.25,
-          "duration_seconds": 2.174756959080696,
+          "additional_peak_memory_mib": 81.125,
+          "baseline_peak_memory_mib": 130.42578125,
+          "duration_seconds": 2.8469021480414085,
           "mean_correlation": 0.03668381382946956,
           "median_correlation": 0.03861302578952655,
-          "peak_memory_mib": 327.5,
+          "peak_memory_mib": 211.55078125,
           "regularization": 10000.0
         }
       ],
@@ -189,52 +189,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 262.171875,
-        "median": 261.59375,
-        "min": 260.203125
+        "max": 114.0546875,
+        "median": 113.65625,
+        "min": 113.27734375
       },
       "configuration": "Finite-lag baseline",
       "direction": "forward",
       "duration_seconds": {
-        "max": 5.222531332983635,
-        "median": 5.122692332952283,
-        "min": 5.037312125088647
+        "max": 6.061484278994612,
+        "median": 6.038650068978313,
+        "min": 6.020983426016755
       },
-      "mean_correlation": 0.019969613771447195,
-      "median_correlation": 0.017215410712152168,
+      "mean_correlation": 0.0199696137714472,
+      "median_correlation": 0.017215410712152164,
       "peak_memory_mib": {
-        "max": 435.0,
-        "median": 433.359375,
-        "min": 431.640625
+        "max": 260.3203125,
+        "median": 260.18359375,
+        "min": 259.44140625
       },
       "profile": "practical",
       "regularization": 3162.2776601683795,
       "samples": [
         {
-          "additional_peak_memory_mib": 262.171875,
-          "baseline_peak_memory_mib": 172.828125,
-          "duration_seconds": 5.037312125088647,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 435.0,
+          "additional_peak_memory_mib": 114.0546875,
+          "baseline_peak_memory_mib": 145.38671875,
+          "duration_seconds": 6.020983426016755,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 259.44140625,
           "regularization": 3162.2776601683795
         },
         {
-          "additional_peak_memory_mib": 260.203125,
-          "baseline_peak_memory_mib": 171.4375,
-          "duration_seconds": 5.222531332983635,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 431.640625,
+          "additional_peak_memory_mib": 113.27734375,
+          "baseline_peak_memory_mib": 146.90625,
+          "duration_seconds": 6.061484278994612,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 260.18359375,
           "regularization": 3162.2776601683795
         },
         {
-          "additional_peak_memory_mib": 261.59375,
-          "baseline_peak_memory_mib": 171.765625,
-          "duration_seconds": 5.122692332952283,
-          "mean_correlation": 0.019969613771447195,
-          "median_correlation": 0.017215410712152168,
-          "peak_memory_mib": 433.359375,
+          "additional_peak_memory_mib": 113.65625,
+          "baseline_peak_memory_mib": 146.6640625,
+          "duration_seconds": 6.038650068978313,
+          "mean_correlation": 0.0199696137714472,
+          "median_correlation": 0.017215410712152164,
+          "peak_memory_mib": 260.3203125,
           "regularization": 3162.2776601683795
         }
       ],
@@ -242,52 +242,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 3254.46875,
-        "median": 3202.015625,
-        "min": 3092.953125
+        "max": 3270.7109375,
+        "median": 3270.63671875,
+        "min": 3270.58984375
       },
       "configuration": "Matched whole-trial",
       "direction": "backward",
       "duration_seconds": {
-        "max": 7.722112708026543,
-        "median": 7.332585333031602,
-        "min": 7.322893000091426
+        "max": 7.6469276219722815,
+        "median": 7.634816715028137,
+        "min": 7.604304187989328
       },
-      "mean_correlation": 0.04694686251988586,
-      "median_correlation": 0.03703786454530451,
+      "mean_correlation": 0.046946862519885856,
+      "median_correlation": 0.03703786454530446,
       "peak_memory_mib": {
-        "max": 3400.4375,
-        "median": 3352.578125,
-        "min": 3239.96875
+        "max": 3401.84765625,
+        "median": 3401.75390625,
+        "min": 3400.22265625
       },
       "profile": "matched",
       "regularization": 1000000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 3202.015625,
-          "baseline_peak_memory_mib": 150.5625,
-          "duration_seconds": 7.722112708026543,
-          "mean_correlation": 0.04694686251988586,
-          "median_correlation": 0.03703786454530451,
-          "peak_memory_mib": 3352.578125,
+          "additional_peak_memory_mib": 3270.7109375,
+          "baseline_peak_memory_mib": 131.04296875,
+          "duration_seconds": 7.6469276219722815,
+          "mean_correlation": 0.046946862519885856,
+          "median_correlation": 0.03703786454530446,
+          "peak_memory_mib": 3401.75390625,
           "regularization": 1000000.0
         },
         {
-          "additional_peak_memory_mib": 3254.46875,
-          "baseline_peak_memory_mib": 145.96875,
-          "duration_seconds": 7.322893000091426,
-          "mean_correlation": 0.04694686251988586,
-          "median_correlation": 0.03703786454530451,
-          "peak_memory_mib": 3400.4375,
+          "additional_peak_memory_mib": 3270.58984375,
+          "baseline_peak_memory_mib": 129.6328125,
+          "duration_seconds": 7.634816715028137,
+          "mean_correlation": 0.046946862519885856,
+          "median_correlation": 0.03703786454530446,
+          "peak_memory_mib": 3400.22265625,
           "regularization": 1000000.0
         },
         {
-          "additional_peak_memory_mib": 3092.953125,
-          "baseline_peak_memory_mib": 147.015625,
-          "duration_seconds": 7.332585333031602,
-          "mean_correlation": 0.04694686251988586,
-          "median_correlation": 0.03703786454530451,
-          "peak_memory_mib": 3239.96875,
+          "additional_peak_memory_mib": 3270.63671875,
+          "baseline_peak_memory_mib": 131.2109375,
+          "duration_seconds": 7.604304187989328,
+          "mean_correlation": 0.046946862519885856,
+          "median_correlation": 0.03703786454530446,
+          "peak_memory_mib": 3401.84765625,
           "regularization": 1000000.0
         }
       ],
@@ -295,52 +295,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 3808.015625,
-        "median": 3675.640625,
-        "min": 3620.609375
+        "max": 3817.3828125,
+        "median": 3817.171875,
+        "min": 3817.1015625
       },
       "configuration": "Finite-lag baseline",
       "direction": "backward",
       "duration_seconds": {
-        "max": 619.4001641250215,
-        "median": 585.0948406669777,
-        "min": 517.6117337920005
+        "max": 476.94888107903535,
+        "median": 474.7536465320154,
+        "min": 473.34937313297996
       },
-      "mean_correlation": 0.11092862870960751,
-      "median_correlation": 0.10456837744964047,
+      "mean_correlation": 0.11092862870960747,
+      "median_correlation": 0.10456837744964043,
       "peak_memory_mib": {
-        "max": 3986.78125,
-        "median": 3852.859375,
-        "min": 3792.171875
+        "max": 3963.5703125,
+        "median": 3963.5625,
+        "min": 3963.55859375
       },
       "profile": "matched",
       "regularization": 1000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 3808.015625,
-          "baseline_peak_memory_mib": 178.765625,
-          "duration_seconds": 517.6117337920005,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3986.78125,
+          "additional_peak_memory_mib": 3817.3828125,
+          "baseline_peak_memory_mib": 146.1875,
+          "duration_seconds": 474.7536465320154,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.5703125,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 3675.640625,
-          "baseline_peak_memory_mib": 177.21875,
-          "duration_seconds": 585.0948406669777,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3852.859375,
+          "additional_peak_memory_mib": 3817.171875,
+          "baseline_peak_memory_mib": 146.390625,
+          "duration_seconds": 473.34937313297996,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.5625,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 3620.609375,
-          "baseline_peak_memory_mib": 171.5625,
-          "duration_seconds": 619.4001641250215,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3792.171875,
+          "additional_peak_memory_mib": 3817.1015625,
+          "baseline_peak_memory_mib": 146.45703125,
+          "duration_seconds": 476.94888107903535,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.55859375,
           "regularization": 1000.0
         }
       ],
@@ -348,52 +348,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 665.90625,
-        "median": 664.109375,
-        "min": 662.984375
+        "max": 551.0625,
+        "median": 550.890625,
+        "min": 549.65234375
       },
       "configuration": "Practical 2 s Hann",
       "direction": "backward",
       "duration_seconds": {
-        "max": 1.7151092500425875,
-        "median": 1.6923159169964492,
-        "min": 1.6586177500430495
+        "max": 2.598163802991621,
+        "median": 2.451704790990334,
+        "min": 2.4324500250513665
       },
-      "mean_correlation": 0.1954013835072483,
-      "median_correlation": 0.1762428981097444,
+      "mean_correlation": 0.19540138350724834,
+      "median_correlation": 0.17624289810974444,
       "peak_memory_mib": {
-        "max": 812.640625,
-        "median": 810.4375,
-        "min": 808.15625
+        "max": 682.33984375,
+        "median": 681.8671875,
+        "min": 680.234375
       },
       "profile": "practical",
       "regularization": 1000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 664.109375,
-          "baseline_peak_memory_mib": 146.328125,
-          "duration_seconds": 1.6923159169964492,
-          "mean_correlation": 0.1954013835072483,
-          "median_correlation": 0.1762428981097444,
-          "peak_memory_mib": 810.4375,
+          "additional_peak_memory_mib": 551.0625,
+          "baseline_peak_memory_mib": 131.27734375,
+          "duration_seconds": 2.598163802991621,
+          "mean_correlation": 0.19540138350724834,
+          "median_correlation": 0.17624289810974444,
+          "peak_memory_mib": 682.33984375,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 662.984375,
-          "baseline_peak_memory_mib": 145.171875,
-          "duration_seconds": 1.6586177500430495,
-          "mean_correlation": 0.1954013835072483,
-          "median_correlation": 0.1762428981097444,
-          "peak_memory_mib": 808.15625,
+          "additional_peak_memory_mib": 550.890625,
+          "baseline_peak_memory_mib": 130.9765625,
+          "duration_seconds": 2.451704790990334,
+          "mean_correlation": 0.19540138350724834,
+          "median_correlation": 0.17624289810974444,
+          "peak_memory_mib": 681.8671875,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 665.90625,
-          "baseline_peak_memory_mib": 146.734375,
-          "duration_seconds": 1.7151092500425875,
-          "mean_correlation": 0.1954013835072483,
-          "median_correlation": 0.1762428981097444,
-          "peak_memory_mib": 812.640625,
+          "additional_peak_memory_mib": 549.65234375,
+          "baseline_peak_memory_mib": 130.58203125,
+          "duration_seconds": 2.4324500250513665,
+          "mean_correlation": 0.19540138350724834,
+          "median_correlation": 0.17624289810974444,
+          "peak_memory_mib": 680.234375,
           "regularization": 1000.0
         }
       ],
@@ -401,52 +401,52 @@
     },
     {
       "additional_peak_memory_mib": {
-        "max": 3808.015625,
-        "median": 3675.640625,
-        "min": 3620.609375
+        "max": 3817.3828125,
+        "median": 3817.171875,
+        "min": 3817.1015625
       },
       "configuration": "Finite-lag baseline",
       "direction": "backward",
       "duration_seconds": {
-        "max": 619.4001641250215,
-        "median": 585.0948406669777,
-        "min": 517.6117337920005
+        "max": 476.94888107903535,
+        "median": 474.7536465320154,
+        "min": 473.34937313297996
       },
-      "mean_correlation": 0.11092862870960751,
-      "median_correlation": 0.10456837744964047,
+      "mean_correlation": 0.11092862870960747,
+      "median_correlation": 0.10456837744964043,
       "peak_memory_mib": {
-        "max": 3986.78125,
-        "median": 3852.859375,
-        "min": 3792.171875
+        "max": 3963.5703125,
+        "median": 3963.5625,
+        "min": 3963.55859375
       },
       "profile": "practical",
       "regularization": 1000.0,
       "samples": [
         {
-          "additional_peak_memory_mib": 3808.015625,
-          "baseline_peak_memory_mib": 178.765625,
-          "duration_seconds": 517.6117337920005,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3986.78125,
+          "additional_peak_memory_mib": 3817.3828125,
+          "baseline_peak_memory_mib": 146.1875,
+          "duration_seconds": 474.7536465320154,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.5703125,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 3675.640625,
-          "baseline_peak_memory_mib": 177.21875,
-          "duration_seconds": 585.0948406669777,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3852.859375,
+          "additional_peak_memory_mib": 3817.171875,
+          "baseline_peak_memory_mib": 146.390625,
+          "duration_seconds": 473.34937313297996,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.5625,
           "regularization": 1000.0
         },
         {
-          "additional_peak_memory_mib": 3620.609375,
-          "baseline_peak_memory_mib": 171.5625,
-          "duration_seconds": 619.4001641250215,
-          "mean_correlation": 0.11092862870960751,
-          "median_correlation": 0.10456837744964047,
-          "peak_memory_mib": 3792.171875,
+          "additional_peak_memory_mib": 3817.1015625,
+          "baseline_peak_memory_mib": 146.45703125,
+          "duration_seconds": 476.94888107903535,
+          "mean_correlation": 0.11092862870960747,
+          "median_correlation": 0.10456837744964043,
+          "peak_memory_mib": 3963.55859375,
           "regularization": 1000.0
         }
       ],

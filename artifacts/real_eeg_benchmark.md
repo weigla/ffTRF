@@ -5,11 +5,11 @@ mTRF speech-EEG sample.
 
 ## Environment and provenance
 
-- Generated: 2026-07-28 09:44 UTC
-- Source: 1df09985750d (dirty)
-- CPU: Apple M3
-- Platform: macOS-26.4-arm64-arm-64bit-Mach-O
-- Machine: arm64
+- Generated: 2026-07-28 11:33 UTC
+- Source: e714c712670c (dirty)
+- CPU: AMD EPYC 9334 32-Core Processor
+- Platform: Linux-5.14.0-687.26.1.el9_8.x86_64-x86_64-with-glibc2.34
+- Machine: x86_64
 - Python: 3.13.12
 - ffTRF: 0.1.0
 - mTRF: 2.1.2
@@ -40,15 +40,15 @@ comparison to the finite-lag mTRF fit.
 
 | Direction | Model | Configuration | Lambda | Mean held-out r | Median held-out r | Fit seconds median [range] | Total peak RSS MiB median [range] | Additional peak RSS MiB median [range] |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Forward | ffTRF | Matched whole-trial | 10000 | 0.0296 | 0.0345 | 5.0341 [5.0047, 5.0771] | 737.1 [692.0, 818.1] | 586.4 [546.9, 671.9] |
-| Forward | mTRF | Finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 5.1227 [5.0373, 5.2225] | 433.4 [431.6, 435.0] | 261.6 [260.2, 262.2] |
-| Backward | ffTRF | Matched whole-trial | 1e+06 | 0.0469 | 0.0370 | 7.3326 [7.3229, 7.7221] | 3352.6 [3240.0, 3400.4] | 3202.0 [3093.0, 3254.5] |
-| Backward | mTRF | Finite-lag baseline | 1000 | 0.1109 | 0.1046 | 585.0948 [517.6117, 619.4002] | 3852.9 [3792.2, 3986.8] | 3675.6 [3620.6, 3808.0] |
+| Forward | ffTRF | Matched whole-trial | 10000 | 0.0296 | 0.0345 | 5.9376 [5.9366, 5.9420] | 619.3 [618.0, 620.7] | 489.5 [489.5, 489.5] |
+| Forward | mTRF | Finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 6.0387 [6.0210, 6.0615] | 260.2 [259.4, 260.3] | 113.7 [113.3, 114.1] |
+| Backward | ffTRF | Matched whole-trial | 1e+06 | 0.0469 | 0.0370 | 7.6348 [7.6043, 7.6469] | 3401.8 [3400.2, 3401.8] | 3270.6 [3270.6, 3270.7] |
+| Backward | mTRF | Finite-lag baseline | 1000 | 0.1109 | 0.1046 | 474.7536 [473.3494, 476.9489] | 3963.6 [3963.6, 3963.6] | 3817.2 [3817.1, 3817.4] |
 
 | Direction | Runtime ratio (mTRF / ffTRF) | Total peak RSS ratio (mTRF / ffTRF) |
 | --- | ---: | ---: |
-| Forward | 1.02× | 0.59× |
-| Backward | 79.79× | 1.15× |
+| Forward | 1.02× | 0.42× |
+| Backward | 62.18× | 1.17× |
 
 Ratios above 1 favor ffTRF; ratios below 1 favor mTRF.
 
@@ -60,14 +60,14 @@ not a strict solver-equivalence claim. The mTRF baseline is unchanged.
 
 | Direction | Model | Configuration | Lambda | Mean held-out r | Median held-out r | Fit seconds median [range] | Total peak RSS MiB median [range] | Additional peak RSS MiB median [range] |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Forward | ffTRF | Practical 2 s Hann | 10000 | 0.0367 | 0.0386 | 2.1748 [2.1545, 2.1880] | 327.5 [324.2, 344.1] | 176.2 [173.8, 182.6] |
-| Forward | mTRF | Finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 5.1227 [5.0373, 5.2225] | 433.4 [431.6, 435.0] | 261.6 [260.2, 262.2] |
-| Backward | ffTRF | Practical 2 s Hann | 1000 | 0.1954 | 0.1762 | 1.6923 [1.6586, 1.7151] | 810.4 [808.2, 812.6] | 664.1 [663.0, 665.9] |
-| Backward | mTRF | Finite-lag baseline | 1000 | 0.1109 | 0.1046 | 585.0948 [517.6117, 619.4002] | 3852.9 [3792.2, 3986.8] | 3675.6 [3620.6, 3808.0] |
+| Forward | ffTRF | Practical 2 s Hann | 10000 | 0.0367 | 0.0386 | 2.8469 [2.8346, 2.8527] | 211.5 [210.9, 211.6] | 80.8 [80.2, 81.1] |
+| Forward | mTRF | Finite-lag baseline | 3162.28 | 0.0200 | 0.0172 | 6.0387 [6.0210, 6.0615] | 260.2 [259.4, 260.3] | 113.7 [113.3, 114.1] |
+| Backward | ffTRF | Practical 2 s Hann | 1000 | 0.1954 | 0.1762 | 2.4517 [2.4325, 2.5982] | 681.9 [680.2, 682.3] | 550.9 [549.7, 551.1] |
+| Backward | mTRF | Finite-lag baseline | 1000 | 0.1109 | 0.1046 | 474.7536 [473.3494, 476.9489] | 3963.6 [3963.6, 3963.6] | 3817.2 [3817.1, 3817.4] |
 
 | Direction | Runtime ratio (mTRF / ffTRF) | Total peak RSS ratio (mTRF / ffTRF) |
 | --- | ---: | ---: |
-| Forward | 2.36× | 1.32× |
-| Backward | 345.74× | 4.75× |
+| Forward | 2.12× | 1.23× |
+| Backward | 193.64× | 5.81× |
 
 Ratios above 1 favor ffTRF; ratios below 1 favor mTRF.
