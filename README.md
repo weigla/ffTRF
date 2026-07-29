@@ -166,10 +166,10 @@ BLAS/OpenMP thread.
 <!-- RUNTIME_BENCHMARK_SUMMARY_START -->
 | Workload | Shape and fit | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Correctness check |
 | --- | --- | ---: | ---: | --- |
-| Moderate length | 1->1, fixed | 0.36× | 1.32× | held-out r 0.9990 / 0.9990 |
-| Longer lag window | 1->1, fixed | 3.03× | 1.00× | held-out r 0.9989 / 0.9989 |
-| Cross-validated ridge | 1->1, cv-8 (k=4) | 9.07× | 1.00× | held-out r 0.9989 / 0.9990 |
-| 102-channel backward decoder | 102->1, fixed | 21.54× | 1.80× | held-out r 0.9711 / 0.8695 |
+| Moderate length | 1->1, fixed | 0.36× | 1.31× | held-out r 0.9990 / 0.9990 |
+| Longer lag window | 1->1, fixed | 3.01× | 1.00× | held-out r 0.9989 / 0.9989 |
+| Cross-validated ridge | 1->1, cv-8 (k=4) | 9.19× | 1.00× | held-out r 0.9989 / 0.9990 |
+| 102-channel backward decoder | 102->1, fixed | 21.60× | 1.80× | held-out r 0.9711 / 0.8695 |
 
 Ratios above 1 favor ffTRF; ratios below 1 favor mTRF. The small
 fixed-ridge row is included deliberately: ffTRF is not universally
@@ -193,10 +193,10 @@ Hann windows with 50% overlap.
 <!-- REAL_EEG_BENCHMARK_SUMMARY_START -->
 | Comparison | Direction | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Held-out r (ffTRF / mTRF) |
 | --- | --- | ---: | ---: | ---: |
-| Matched whole-trial | Forward | 1.02× | 0.42× | 0.0296 / 0.0200 |
-| Matched whole-trial | Backward | 62.18× | 1.17× | 0.0469 / 0.1109 |
-| Practical 2 s Hann | Forward | 2.12× | 1.23× | 0.0367 / 0.0200 |
-| Practical 2 s Hann | Backward | 193.64× | 5.81× | 0.1954 / 0.1109 |
+| Matched whole-trial | Forward | 1.03× | 0.42× | 0.0296 / 0.0200 |
+| Matched whole-trial | Backward | 63.75× | 1.17× | 0.0469 / 0.1109 |
+| Practical 2 s Hann | Forward | 2.16× | 1.23× | 0.0367 / 0.0200 |
+| Practical 2 s Hann | Backward | 207.69× | 5.81× | 0.1954 / 0.1109 |
 
 Ratios above 1 favor ffTRF. Matched rows compare the closest available
 solver settings. Practical rows use 2-second Hann-windowed spectra in
