@@ -1,7 +1,9 @@
 # Diagnostics and Transfer Functions
 
 `ffTRF` exposes both lag-domain and frequency-domain views of a fitted model.
-This page focuses on the spectral tools.
+This page focuses on choosing the spectral tool that answers your question.
+The [Diagnostics Notebook](../notebooks/diagnostics.ipynb) fits one model and
+shows the output of each function.
 
 ## Raw Transfer Function
 
@@ -17,6 +19,10 @@ frequencies, transfer = model.transfer_function_at(
 
 The returned complex values encode both amplitude and phase.
 
+Use this numerical interface when you need to export values, define a custom
+summary, or combine the transfer function with another analysis. For routine
+inspection, the plotting helpers below are shorter.
+
 ## Derived Transfer-Function Components
 
 Use `transfer_function_components_at(...)` when you want the common derived
@@ -28,6 +34,17 @@ quantities in one container:
 
 This is convenient when you want values for custom plotting or downstream
 analysis.
+
+```python
+components = model.transfer_function_components_at(
+    input_index=0,
+    output_index=0,
+)
+
+components.magnitude
+components.phase
+components.group_delay
+```
 
 ## Transfer-Function Plotting
 
@@ -42,6 +59,21 @@ Use `plot_transfer_function(...)` for quick inspection:
 Group delay can be especially informative when you want to know whether the
 fitted mapping behaves like a delayed filter across frequencies rather than a
 single lag-domain peak.
+
+Plot magnitude, phase, and group delay separately while learning the API. They
+have different units and answer different questions:
+
+```python
+fig, ax = model.plot_transfer_function(kind="magnitude")
+fig, ax = model.plot_transfer_function(kind="phase", phase_unit="deg")
+fig, ax = model.plot_transfer_function(
+    kind="group_delay",
+    group_delay_unit="ms",
+)
+```
+
+The combined `kind="all"` layout is useful once you already know which panel
+you need.
 
 ## Cross-Spectral Diagnostics
 
@@ -58,6 +90,16 @@ The returned container includes:
 This is useful when a lag-domain kernel looks plausible but you still want to
 know whether the model captures the spectral structure of the target signal.
 
+Compute these diagnostics on held-out data whenever the goal is to assess
+generalization:
+
+```python
+diagnostics = model.cross_spectral_diagnostics(
+    stimulus=heldout_stimulus,
+    response=heldout_response,
+)
+```
+
 ## Coherence
 
 `plot_coherence(...)` shows the magnitude-squared coherence between predicted
@@ -71,6 +113,17 @@ Interpretation:
 Coherence is bounded, so it is often easier to compare across channels than raw
 spectral magnitudes.
 
+```python
+fig, ax = model.plot_coherence(
+    diagnostics=diagnostics,
+    output_index=0,
+)
+```
+
+High coherence describes frequency-specific linear agreement. It does not by
+itself show that a model is unbiased or that its prediction has the correct
+amplitude.
+
 ## Cross Spectrum
 
 `plot_cross_spectrum(...)` shows the predicted-vs-observed cross spectrum for
@@ -81,15 +134,16 @@ one output channel.
 - phase shows whether they align or lag relative to each other in the spectral
   domain
 
-The public EEG comparison example in the repository is a useful sanity check
-for these diagnostics because it puts the recovered kernels next to a
-time-domain reference implementation.
+```python
+fig, ax = model.plot_cross_spectrum(
+    diagnostics=diagnostics,
+    output_index=0,
+    kind="magnitude",
+)
+```
 
-![Real EEG forward kernel comparison](../images/examples/real_eeg_forward_kernels.png)
-
-The same run also summarizes kernel agreement across channels and lag samples:
-
-![Real EEG kernel agreement summary](../images/examples/real_eeg_kernel_agreement.png)
+The magnitude and phase views are demonstrated separately in the
+[Diagnostics Notebook](../notebooks/diagnostics.ipynb#predicted-observed-cross-spectrum).
 
 ## When to Use Which Tool
 

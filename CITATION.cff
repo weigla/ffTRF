@@ -6,6 +6,7 @@ type: software
 repository-code: "https://github.com/weigla/ffTRF"
 url: "https://weigla.github.io/ffTRF/"
 abstract: "A simple Toolbox to compute Temporal Response Functions using deconvolution in the Frequency Domain"
+message: "If you use this software, please cite it using these metadata."
 authors:
   - given-names: Alexander
     family-names: Weigl

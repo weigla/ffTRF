@@ -7,6 +7,8 @@ name = "fftrf"
 dynamic = ["version"]
 authors = [
   { name="Alexander Weigl", email="alexander.weigl@plus.ac.at" },
+  { name="Fabian Schmidt", email="fabian.schmidt@plus.ac.at" },
+  { name="Nathan Weisz", email="nathan.weisz@plus.ac.at" },
 ]
 description = "ffTRF: frequency-domain temporal response function and deconvolution tools."
 readme = "README.md"
@@ -77,7 +79,7 @@ include = [
   "/mkdocs.yml",
   "/README.md",
   "/LICENSE",
-  "/CITATION.CFF",
+  "/CITATION.cff",
   "/CONTRIBUTING.md",
 ]
 

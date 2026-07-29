@@ -75,7 +75,7 @@ pixi run -e package hatch version major
 ```
 
 Hatch updates the version file but does not create a Git tag. Update
-`CITATION.CFF` to the same release version, then create and push the matching
+`CITATION.cff` to the same release version, then create and push the matching
 `v<version>` tag before publishing the GitHub Release. The production workflow
 checks that the release tag matches `hatch version` before building or
 uploading artifacts. Before the final release commit, regenerate both benchmark

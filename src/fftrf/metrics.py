@@ -71,6 +71,10 @@ def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
     Scores can become negative when predictions are worse than a constant mean
     predictor. This makes the metric suitable for model comparison and
     cross-validation because larger values remain better.
+
+    Unlike :func:`explained_variance_score`, :math:`R^2` penalizes a constant
+    offset between prediction and observation. The two scores are equal only
+    when the prediction residual has zero mean.
     """
 
     y_true = _ensure_2d(y_true, "y_true")
@@ -108,7 +112,9 @@ def explained_variance_score(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarr
     Notes
     -----
     Explained variance focuses on residual variance rather than absolute error
-    magnitude. Like :func:`r2_score`, larger values are better.
+    magnitude. Like :func:`r2_score`, larger values are better. A prediction
+    that has the correct fluctuations but a constant offset can therefore have
+    perfect explained variance while its :math:`R^2` is below one.
     """
 
     y_true = _ensure_2d(y_true, "y_true")

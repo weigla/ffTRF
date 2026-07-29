@@ -3358,7 +3358,7 @@ packages:
 - pypi: ./
   name: fftrf
   version: 0.1.0
-  sha256: ba50a7ad6ab94261ab6521e4b6259b2700370fa5f442c86e517daa3434f455fc
+  sha256: e0210adbfac227b5825ffd32cabad2aaf8f5466be673f895a0db34bf84e5ca9e
   requires_dist:
   - matplotlib>=3.8
   - numpy>=1.26

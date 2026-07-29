@@ -160,7 +160,8 @@ Hatch updates the package version but does not create Git tags. Production PyPI
 publishing is triggered by publishing a GitHub Release from a tag named
 `v<version>`, for example `v0.1.0`. The release workflow verifies that the tag
 matches the Hatch-managed version before building and uploading the package.
-When preparing a release, update `CITATION.CFF` to the same version, create the
+
+When preparing the final release, update `CITATION.cff` to the same version, create the
 matching tag, and push it:
 
 ```bash

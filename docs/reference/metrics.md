@@ -15,10 +15,36 @@ with the same ridge-regularized spectral solver.
 ## Built-In Metrics
 
 - `pearsonr`: default correlation-based score
-- `r2_score`: coefficient of determination
-- `explained_variance_score`: variance-based goodness of fit
+- `r2_score`: fraction of squared error removed relative to predicting the
+  observed mean
+- `explained_variance_score`: fraction of target variance not left in the
+  residual
 - `neg_mse`: mTRF-compatible negative MSE where larger values are better
 - `available_metrics()`: list built-in metric names accepted by `TRF(metric=...)`
+
+## R² and Explained Variance Are Not Interchangeable
+
+The two scores are equal when the residual
+`y_true - y_pred` has zero mean. They differ when a model has a constant
+prediction bias:
+
+```python
+import numpy as np
+
+from fftrf import explained_variance_score, r2_score
+
+y_true = np.arange(5.0)
+y_pred = y_true + 1.0
+
+print(explained_variance_score(y_true, y_pred))  # [1.]
+print(r2_score(y_true, y_pred))                  # [0.5]
+```
+
+Explained variance is perfect here because the residual is constant and
+therefore has zero variance. R² is lower because the predictions are displaced
+from the observations. Use R² when absolute calibration matters. Explained
+variance is useful when the scientific question concerns whether the model
+captures fluctuations after disregarding a constant offset.
 
 ## Custom Metrics
 

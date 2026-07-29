@@ -43,9 +43,23 @@ nav:
       - Trial Weighting and Bootstrap: guides/trial-weighting-and-bootstrap.md
       - Significance Testing: guides/significance-testing.md
   - Examples: examples.md
+  - Comparison with mTRF: comparison-with-mtrf.md
   - Notebooks:
-      - Getting Started Notebook: notebooks/getting-started.ipynb
-      - Frequency-Resolved Notebook: notebooks/frequency-resolved.ipynb
+      - Start Here:
+          - Getting Started: notebooks/getting-started.ipynb
+          - Multiple Features and Channels: notebooks/multifeature-multichannel.ipynb
+          - Backward Decoding: notebooks/backward-decoding.ipynb
+      - Model Choices:
+          - Regularization: notebooks/regularization.ipynb
+          - Multitaper Estimation: notebooks/multitaper.ipynb
+      - Interpretation:
+          - Frequency-Resolved Analysis: notebooks/frequency-resolved.ipynb
+          - Spectral Diagnostics: notebooks/diagnostics.ipynb
+      - Inference and Data Quality:
+          - Uncertainty and Significance: notebooks/uncertainty-and-significance.ipynb
+          - Trial Weighting: notebooks/trial-weighting.ipynb
+      - Reuse:
+          - Persistence: notebooks/persistence.ipynb
   - Reference:
       - Overview: reference/index.md
       - TRF Estimator: reference/trf.md

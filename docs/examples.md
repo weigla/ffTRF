@@ -1,44 +1,42 @@
 # Examples
 
-The repository ships plain Python scripts under `examples/`. Start with the
-smallest script matching your data and move to inference or advanced spectral
-features only when the scientific question requires them.
+Use the rendered notebooks when learning a workflow. They split the analysis
+into short executable steps and explain which scientific question each option
+addresses. The plain Python scripts under `examples/` remain useful for
+copying into pipelines and for CI smoke tests.
 
-## Start Here
+Related scripts are grouped into one notebook when the scientific decisions
+belong together. This keeps the notebook navigation extensive without turning
+it into a second API reference.
 
-| Script | Use case |
+## Choose a Notebook
+
+| Question | Notebook |
 | --- | --- |
-| `example_single_trial_single_channel.py` | Smallest forward fit with one predictor, one output, and one trial; its score is an in-sample reconstruction diagnostic |
-| `example_multi_trial_single_channel.py` | Multi-trial CV plus a genuinely held-out prediction |
-| `example_multifeature_multichannel.py` | Multiple predictors and EEG-like output channels |
-| `example_backward_decoding.py` | Backward decoding with `direction=-1` |
-| `example_save_and_load.py` | Save, restore, and export a fitted model |
+| How do I fit and evaluate my first forward model? | [Getting Started](notebooks/getting-started.ipynb) |
+| How do predictor features map onto several EEG channels? | [Multiple Features and Channels](notebooks/multifeature-multichannel.ipynb) |
+| How do I reconstruct a stimulus from multichannel responses? | [Backward Decoding](notebooks/backward-decoding.ipynb) |
+| How should I select scalar or feature-banded ridge penalties? | [Regularization](notebooks/regularization.ipynb) |
+| When is multitaper spectral estimation useful? | [Multitaper Estimation](notebooks/multitaper.ipynb) |
+| Which frequencies contribute to different parts of a kernel? | [Frequency-Resolved Analysis](notebooks/frequency-resolved.ipynb) |
+| How do I inspect gain, phase, coherence, and cross-spectra? | [Spectral Diagnostics](notebooks/diagnostics.ipynb) |
+| How do I quantify kernel uncertainty or test held-out tracking? | [Uncertainty and Significance](notebooks/uncertainty-and-significance.ipynb) |
+| When are trial weights scientifically defensible? | [Trial Weighting](notebooks/trial-weighting.ipynb) |
+| How do I save, restore, and export a fitted kernel? | [Persistence](notebooks/persistence.ipynb) |
 
-For a typical neuroscience analysis, start with
-`example_multi_trial_single_channel.py`. It shows the separation between
-training/CV trials and the untouched evaluation trial without adding optional
-weighting or inference choices.
+For a typical neuroscience analysis, begin with Getting Started. Continue only
+to the notebook connected to a prespecified analysis question.
 
-## Inference and Trial Quality
+## Runnable Script Counterparts
 
-| Script | Use case |
+| Goal | Scripts |
 | --- | --- |
-| `example_bootstrap_confidence_interval.py` | Pointwise percentile intervals from trial resampling plus an independent held-out score |
-| `example_permutation_significance.py` | Fixed-kernel circular-shift test on an untouched test trial, including attainable p-value resolution |
-| `example_trial_weighting.py` | Controlled demonstration of inverse-variance weighting when excess variance is known to be noise |
-
-Inverse-variance weighting is a heuristic, not a default preprocessing step.
-The example deliberately injects independent noise so the source of excess
-variance is known. See [Trial Weighting and Bootstrap](guides/trial-weighting-and-bootstrap.md)
-before applying it to neural data.
-
-## Advanced Estimation
-
-| Script | Use case |
-| --- | --- |
-| `example_banded_regularization.py` | Separate ridge penalties for grouped predictor blocks |
-| `example_multitaper_estimator.py` | DPSS multitaper fitting and spectral diagnostics |
-| `example_frequency_resolved_weights.py` | Frequency-resolved lag-domain maps of a fitted kernel |
+| Basic forward workflows | `example_single_trial_single_channel.py`, `example_multi_trial_single_channel.py` |
+| Multivariate and backward models | `example_multifeature_multichannel.py`, `example_backward_decoding.py` |
+| Regularization and spectral estimation | `example_banded_regularization.py`, `example_multitaper_estimator.py` |
+| Interpretation and diagnostics | `example_frequency_resolved_weights.py` |
+| Inference and data quality | `example_bootstrap_confidence_interval.py`, `example_permutation_significance.py`, `example_trial_weighting.py` |
+| Persistence | `example_save_and_load.py` |
 
 ## Focused Real EEG Workflows
 
@@ -61,19 +59,21 @@ this example, not a universal preprocessing template.
 
 The loader fetches
 [`tests/data/speech_data.npy` from mTRFpy commit `9b89449c…`](https://github.com/powerfulbean/mTRFpy/blob/9b89449caaed3a4b7c80ea238a52c34a723cb8de/tests/data/speech_data.npy)
-and accepts only SHA-256
-`5726060e254caac865c5ca7cf56a8218937f4c05b7784fb08d11658748daee36`.
+and checks SHA-256.
 It verifies cached files on every use and writes new downloads to a temporary
 file before atomically installing a digest-matching copy.
 
-This check is especially important because the upstream `.npy` stores a Python
-object and therefore uses pickle internally. ffTRF verifies the exact bytes
-from the same open file and restricts decoding to the few NumPy constructors
-required by this artifact. Do not bypass the helper for files from another
-source. If a cache integrity check fails, remove only
+If a cache integrity check fails, remove only
 `artifacts/mtrf_data/speech_data.npy` and rerun the example.
 
-## Advanced Validation and Benchmarks
+## Comparing ffTRF With mTRF
+
+Toolbox agreement, real-EEG validation figures, and benchmark interpretation
+have a dedicated page: [Comparison with mTRF](comparison-with-mtrf.md).
+That page distinguishes matched solver comparisons from ffTRF workflows that
+use a different spectral estimator.
+
+## Validation and Benchmark Programs
 
 The following are development and validation programs, not first tutorials:
 
@@ -120,15 +120,6 @@ thread, preserve every measured run in JSON, and update generated summary
 blocks in the main README. Runtime ratios are hardware-dependent; regenerate
 both reports from a clean revision for release-facing claims.
 
-## Rendered Notebooks
-
-- [Getting Started Notebook](notebooks/getting-started.ipynb)
-- [Frequency-Resolved Notebook](notebooks/frequency-resolved.ipynb)
-
-The getting-started notebook intentionally uses equal trial contribution and
-the baseline spectral settings. The frequency-resolved notebook is an advanced
-interpretation workflow.
-
 ## Reading Results Carefully
 
 When working through the scripts, distinguish:
@@ -138,24 +129,3 @@ When working through the scripts, distinguish:
 - pointwise bootstrap variability from simultaneous inference
 - one prespecified channel from a channel selected after inspecting results
 - user examples from benchmark and validation infrastructure
-
-## Real EEG Validation Gallery
-
-These figures come from the advanced comparison and documentation generator,
-not from the two focused quickstarts.
-
-### Forward Kernels
-
-![Real EEG forward kernel comparison](images/examples/real_eeg_forward_kernels.png)
-
-### Frequency-Resolved Kernel
-
-![Real EEG frequency-resolved weights](images/examples/real_eeg_frequency_resolved.png)
-
-### Backward Model
-
-![Real EEG backward model](images/examples/real_eeg_backward_model.png)
-
-### Kernel Agreement
-
-![Real EEG kernel agreement summary](images/examples/real_eeg_kernel_agreement.png)

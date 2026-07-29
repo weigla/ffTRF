@@ -927,12 +927,15 @@ def test_cv_progress_indicator_emits_output(capsys: pytest.CaptureFixture[str]) 
 def test_builtin_metric_helpers_and_registry() -> None:
     y_true = np.array([[0.0], [1.0], [2.0], [3.0]])
     y_pred = np.array([[0.0], [0.8], [2.2], [3.1]])
+    biased_prediction = y_true + 1.0
 
     assert "r2" in available_metrics()
     assert "explained_variance" in available_metrics()
     assert "neg_mse" in available_metrics()
     assert float(r2_score(y_true, y_pred)[0]) > 0.95
     assert float(explained_variance_score(y_true, y_pred)[0]) > 0.95
+    assert float(explained_variance_score(y_true, biased_prediction)[0]) == pytest.approx(1.0)
+    assert float(r2_score(y_true, biased_prediction)[0]) == pytest.approx(0.2)
     assert float(neg_mse(y_true, y_pred)[0]) == pytest.approx(-0.0225)
 
 

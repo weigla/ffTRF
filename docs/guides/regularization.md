@@ -143,7 +143,15 @@ Choose it to match the scientific objective:
   convention
 - `r2` compares residual error with a constant-mean baseline and may be
   negative on difficult held-out data
-- `explained_variance` focuses on residual variance rather than absolute error
+- `explained_variance` focuses on residual variance and does not penalize a
+  constant prediction offset
+
+R² and explained variance coincide only when the prediction residual has zero
+mean. If absolute response calibration matters, prefer R². If the analysis is
+specifically about capturing fluctuations while ignoring a constant offset,
+explained variance can express that question more directly. See
+[Metrics](../reference/metrics.md#r2-and-explained-variance-are-not-interchangeable)
+for a concrete example.
 
 It is reasonable to select with one prespecified metric and report additional
 held-out metrics, but do not choose whichever metric looks best after seeing

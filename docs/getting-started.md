@@ -18,7 +18,7 @@ other plotting helpers work without an additional extra.
 or if you use [Pixi](https://pixi.prefix.dev/latest/installation/#install-from-source):
 
 ```bash
-pixi add fftrf
+pixi add --pypi fftrf
 ```
 
 alternatively you can point directly to this repo in you `pixi.toml`file:
