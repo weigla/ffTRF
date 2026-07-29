@@ -21,7 +21,7 @@ or if you use [Pixi](https://pixi.prefix.dev/latest/installation/#install-from-s
 pixi add --pypi fftrf
 ```
 
-alternatively you can point directly to this repo in you `pixi.toml`file:
+alternatively you can point directly to this repo in your `pixi.toml`file:
 ```toml
 [pypi-dependencies]
 ffTRF = { git = "https://github.com/weigla/ffTRF.git"}
