@@ -167,9 +167,9 @@ BLAS/OpenMP thread.
 | Workload | Shape and fit | Runtime ratio (mTRF / ffTRF) | Peak RSS ratio (mTRF / ffTRF) | Correctness check |
 | --- | --- | ---: | ---: | --- |
 | Moderate length | 1->1, fixed | 0.36× | 1.31× | held-out r 0.9990 / 0.9990 |
-| Longer lag window | 1->1, fixed | 3.01× | 1.00× | held-out r 0.9989 / 0.9989 |
-| Cross-validated ridge | 1->1, cv-8 (k=4) | 9.19× | 1.00× | held-out r 0.9989 / 0.9990 |
-| 102-channel backward decoder | 102->1, fixed | 21.60× | 1.80× | held-out r 0.9711 / 0.8695 |
+| Longer lag window | 1->1, fixed | 3.13× | 1.00× | held-out r 0.9989 / 0.9989 |
+| Cross-validated ridge | 1->1, cv-8 (k=4) | 9.65× | 1.00× | held-out r 0.9989 / 0.9990 |
+| 102-channel backward decoder | 102->1, fixed | 20.44× | 1.80× | held-out r 0.9711 / 0.8695 |
 
 Ratios above 1 favor ffTRF; ratios below 1 favor mTRF. The small
 fixed-ridge row is included deliberately: ffTRF is not universally
