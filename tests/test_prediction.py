@@ -18,7 +18,6 @@ from fftrf.prediction import (
     _prepare_prediction_trials,
     _resolve_permutation_surrogate,
     _resolve_permutation_tail,
-    _sample_non_identity_permutation,
     _score_prediction_trials,
     _slice_interval,
     _surrogate_target_trials,
@@ -88,14 +87,12 @@ def test_permutation_option_resolution_accepts_aliases_and_rejects_unknown_value
         _resolve_permutation_tail("upper")
 
 
-def test_nonidentity_permutation_has_deterministic_fallback() -> None:
-    class IdentityGenerator:
-        @staticmethod
-        def permutation(n_trials: int) -> np.ndarray:
-            return np.arange(n_trials)
-
-    order = _sample_non_identity_permutation(IdentityGenerator(), n_trials=3)  # type: ignore[arg-type]
-    assert np.array_equal(order, [2, 0, 1])
+def test_small_permutation_spaces_include_identity_exactly_once() -> None:
+    specs = _build_permutation_specs(
+        target_trials=[np.zeros((4, 1)), np.ones((4, 1))],
+        surrogate="trial_shuffle", fs=1.0, min_shift=None, n_permutations=100, seed=0,
+    )
+    assert [spec.tolist() for spec in specs] == [[0, 1], [1, 0]]
 
 
 def test_circular_shift_bounds_validate_trial_length_and_minimum_shift() -> None:
@@ -128,8 +125,8 @@ def test_permutation_specs_and_surrogate_trials_preserve_expected_structure() ->
         surrogate="trial_shuffle",
         spec=shuffle_specs[0],
     )
-    assert len(shuffle_specs) == 3
-    assert all(not np.array_equal(spec, [0, 1]) for spec in shuffle_specs)
+    assert len(shuffle_specs) == 2
+    assert any(np.array_equal(spec, [0, 1]) for spec in shuffle_specs)
     assert np.array_equal(shuffled[0], equal_trials[int(shuffle_specs[0][0])])
 
     shift_specs = _build_permutation_specs(
@@ -211,7 +208,7 @@ def test_permutation_score_computation_runs_serial_path_and_validates_count() ->
     ]
     targets = [trial.copy() for trial in predictions]
 
-    observed, null_scores, p_value, z_score = _compute_permutation_test_scores(
+    observed, null_scores, p_value, z_score, exact = _compute_permutation_test_scores(
         prediction_trials=predictions,
         target_trials=targets,
         metric=_neg_mse,
@@ -229,6 +226,7 @@ def test_permutation_score_computation_runs_serial_path_and_validates_count() ->
     assert null_scores.shape == (4,)
     assert 0.0 < p_value <= 1.0
     assert np.isfinite(z_score)
+    assert not exact
 
     with pytest.raises(ValueError, match="n_permutations"):
         _compute_permutation_test_scores(

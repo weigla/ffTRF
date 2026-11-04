@@ -55,6 +55,14 @@ for the corresponding code and plot.
 - `bandwidth`: width of the Gaussian analysis bands
 - `value_mode`: how the band-limited kernels are represented
 
+The analysis filters are normalized to sum to one at every active FFT bin,
+including for very narrow bandwidths. In the limiting narrow-band case, a bin
+is assigned to its nearest band center or shared between equally close
+centers. Summing signed bands reconstructs the ordinary kernel to numerical
+precision when the complete fitted frequency range, including DC, is covered.
+Lag requests longer than the stored FFT length are rejected consistently by
+all kernel views.
+
 ## Choosing `value_mode`
 
 - `value_mode="real"` keeps signed band-limited kernels

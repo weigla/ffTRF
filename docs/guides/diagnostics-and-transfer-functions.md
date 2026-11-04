@@ -100,6 +100,10 @@ diagnostics = model.cross_spectral_diagnostics(
 )
 ```
 
+Only matched output spectra are accumulated. Memory for these accumulators
+grows linearly with the number of outputs; diagnostics do not construct full
+output-by-output spectral matrices or retain per-trial spectral caches.
+
 ## Coherence
 
 `plot_coherence(...)` shows the magnitude-squared coherence between predicted
@@ -123,6 +127,15 @@ fig, ax = model.plot_coherence(
 High coherence describes frequency-specific linear agreement. It does not by
 itself show that a model is unbiased or that its prediction has the correct
 amplitude.
+
+Coherence preserves its value when the signal units change. Bins with zero
+predicted or observed power return zero by convention. An informative estimate
+requires averaging over more than one positive-weight trial, segment, or
+taper. With just one realization, the single-periodogram ratio is identically
+one for any two nonzero signals. The toolbox warns and returns NaN coherence
+for this case while still returning the spectra. Supply multiple trials, use
+shorter segments during fitting, or use multiple DPSS tapers. Overlapping
+segments and tapers do not by themselves guarantee independent observations.
 
 ## Cross Spectrum
 

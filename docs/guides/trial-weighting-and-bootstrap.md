@@ -55,6 +55,12 @@ from fftrf import inverse_variance_weights
 weights = inverse_variance_weights(response)
 ```
 
+Relative inverse-variance weights are invariant to a common nonzero change of
+units. If any trials have exactly zero variance, they share all weight equally
+and nonconstant trials receive zero, the limiting inverse-variance convention.
+Inspect constant trials before treating them as high-quality observations.
+Empty or non-finite inputs are rejected.
+
 This can be useful in a controlled situation where greater variance is known to
 come from added noise. In neuroscience data, however, variance can also reflect
 genuine evoked responses, state changes, gain differences, or experimental
@@ -96,7 +102,10 @@ interval, times = model.bootstrap_confidence_interval(
 
 The implementation samples trials with replacement, refits the transfer
 function from the resampled cached spectra, and takes percentile quantiles of
-the resulting kernels. It requires at least two trials.
+the resulting kernels. Zero-weight trials are excluded from the resampling
+population, and at least two positive-weight trials are required. A post-fit
+bootstrap must use the fitted predictor and output dimensions; incompatible
+data are rejected without replacing an existing interval.
 
 `interval` has shape `(2, n_inputs, n_lags, n_outputs)`: the first axis contains
 the lower and upper bounds and the remaining axes match `model.weights`.

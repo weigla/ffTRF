@@ -17,6 +17,8 @@ from fractions import Fraction
 import numpy as np
 from scipy.signal import resample_poly
 
+from .utils import _inverse_variance_trial_weights
+
 
 def half_wave_rectify(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Split a waveform into positive and negative half-wave components.
@@ -134,19 +136,10 @@ def inverse_variance_weights(trials: Sequence[np.ndarray]) -> np.ndarray:
     compare against an unweighted fit, and report the weighting rule.
 
     Variance is averaged across channels/features before the inverse is taken.
+    Weights are invariant to a common nonzero rescaling of all trials. If any
+    trials have exactly zero variance, they share all weight equally and the
+    other trials receive zero, the limiting inverse-variance convention.
+    Empty or non-finite trials are rejected.
     """
 
-    if len(trials) == 0:
-        raise ValueError("Need at least one trial to compute weights.")
-
-    variances = []
-    for trial in trials:
-        trial = np.asarray(trial, dtype=float)
-        if trial.ndim == 1:
-            trial = trial[:, np.newaxis]
-        variances.append(np.var(trial, axis=0).mean())
-
-    variances = np.asarray(variances, dtype=float)
-    variances = np.clip(variances, np.finfo(float).eps, None)
-    weights = 1.0 / variances
-    return weights / weights.sum()
+    return _inverse_variance_trial_weights(trials)

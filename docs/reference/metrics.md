@@ -12,6 +12,17 @@ These metrics are used for:
 They are not alternative fitting objectives. The TRF itself is always fitted
 with the same ridge-regularized spectral solver.
 
+Correlation, R², and explained variance preserve their values under a common
+nonzero change of signal units. Positive rescaling of either signal also
+preserves correlation. Small nonzero signals are not treated as constants by
+an absolute amplitude threshold. All metric inputs must be finite and have
+non-empty sample and output axes.
+
+Exactly constant columns use finite conventions: correlation is zero; R² is
+one for identical predictions and zero otherwise; explained variance is one
+for a constant residual and zero for a varying residual. Negative MSE retains
+its physical squared-amplitude units.
+
 ## Built-In Metrics
 
 - `pearsonr`: default correlation-based score
@@ -51,7 +62,7 @@ captures fluctuations after disregarding a constant offset.
 You can also pass your own callable to `TRF(metric=...)`. A custom metric must:
 
 - accept `(y_true, y_pred)`
-- return one score per output column
+- return one finite score per output column as a 1D array
 - use "larger is better" semantics if you want cross-validation to pick the
   best value sensibly
 

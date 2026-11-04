@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from itertools import permutations, product
 
 import numpy as np
 from scipy.fft import next_fast_len
@@ -17,7 +18,7 @@ from .spectral import (
     _solve_transfer_function,
     _SpectralCache,
 )
-from .utils import _aggregate_metric, _resolve_n_jobs
+from .utils import _aggregate_metric, _resolve_lag_samples, _resolve_n_jobs
 
 
 @dataclass(slots=True)
@@ -38,12 +39,7 @@ def _extract_impulse_response(
     tmin: float,
     tmax: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    lag_start = int(round(float(tmin) * fs))
-    lag_stop = int(round(float(tmax) * fs))
-    if lag_stop <= lag_start:
-        raise ValueError("tmax must be greater than tmin.")
-    if lag_stop - lag_start > n_fft:
-        raise ValueError("Requested lag window is longer than n_fft.")
+    lag_start, lag_stop = _resolve_lag_samples(fs=fs, tmin=tmin, tmax=tmax, n_fft=n_fft)
 
     full_kernel = np.fft.irfft(transfer_function, n=n_fft, axis=0).real
     lag_indices = np.arange(lag_start, lag_stop, dtype=int)
@@ -58,14 +54,17 @@ def _slice_interval(
     *,
     tmin: float | None,
     tmax: float | None,
+    fs: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     if tmin is None and tmax is None:
         return interval.copy(), times.copy()
+    if fs is None:
+        fs = 1.0 / (times[1] - times[0]) if times.size > 1 else 1.0
     tmin = times[0] if tmin is None else tmin
-    if tmax is None:
-        step = (times[1] - times[0]) if times.size > 1 else 1.0
-        tmax = times[-1] + step
-    mask = (times >= tmin) & (times < tmax)
+    tmax = times[-1] + 1.0 / fs if tmax is None else tmax
+    start, stop = _resolve_lag_samples(fs=fs, tmin=tmin, tmax=tmax)
+    samples = np.rint(times * fs).astype(int)
+    mask = (samples >= start) & (samples < stop)
     if not np.any(mask):
         raise ValueError("Requested lag window does not overlap the stored interval.")
     return interval[:, :, mask, :].copy(), times[mask].copy()
@@ -94,17 +93,10 @@ def _resolve_permutation_tail(tail: str) -> str:
     return resolved
 
 
-def _sample_non_identity_permutation(
-    rng: np.random.Generator,
-    *,
-    n_trials: int,
-) -> np.ndarray:
-    identity = np.arange(n_trials, dtype=int)
-    for _ in range(32):
-        order = rng.permutation(n_trials)
-        if not np.array_equal(order, identity):
-            return order
-    return np.roll(identity, 1)
+@dataclass(slots=True)
+class _PermutationPlan:
+    specs: list[np.ndarray]
+    exact: bool
 
 
 def _circular_shift_bounds(
@@ -133,7 +125,7 @@ def _circular_shift_bounds(
     return lower, upper
 
 
-def _build_permutation_specs(
+def _build_permutation_plan(
     *,
     target_trials: Sequence[np.ndarray],
     surrogate: str,
@@ -141,9 +133,15 @@ def _build_permutation_specs(
     min_shift: float | None,
     n_permutations: int,
     seed: int | None,
-) -> list[np.ndarray]:
+) -> _PermutationPlan:
+    if n_permutations <= 0:
+        raise ValueError("n_permutations must be positive.")
     rng = np.random.default_rng(seed)
     n_trials = len(target_trials)
+    if n_trials == 0:
+        raise ValueError("Permutation testing requires at least one trial.")
+    # Bound exact work even when a caller requests a very large Monte Carlo run.
+    exact_limit = min(n_permutations, 10_000)
 
     if surrogate == "trial_shuffle":
         if n_trials < 2:
@@ -153,23 +151,53 @@ def _build_permutation_specs(
             raise ValueError(
                 "trial_shuffle requires all evaluation trials to have the same sample count."
             )
-        return [
-            _sample_non_identity_permutation(rng, n_trials=n_trials)
-            for _ in range(n_permutations)
-        ]
+        space_size = 1
+        for factor in range(2, n_trials + 1):
+            space_size *= factor
+            if space_size > exact_limit:
+                break
+        if space_size <= exact_limit:
+            return _PermutationPlan([
+                np.asarray(order, dtype=int) for order in permutations(range(n_trials))
+            ], exact=True)
+        return _PermutationPlan([
+            rng.permutation(n_trials) for _ in range(n_permutations)
+        ], exact=False)
 
+    bounds = [
+        _circular_shift_bounds(n_samples=trial.shape[0], fs=fs, min_shift=min_shift)
+        for trial in target_trials
+    ]
+    space_size = 1
+    for lower, upper in bounds:
+        space_size *= upper - lower + 2  # Nonzero shifts plus the identity.
+        if space_size > exact_limit:
+            break
+    if space_size <= exact_limit:
+        choices = [[0, *range(lower, upper + 1)] for lower, upper in bounds]
+        return _PermutationPlan([
+            np.asarray(shifts, dtype=int) for shifts in product(*choices)
+        ], exact=True)
     specs: list[np.ndarray] = []
     for _ in range(n_permutations):
         shifts = np.zeros(n_trials, dtype=int)
-        for trial_index, target_trial in enumerate(target_trials):
-            lower, upper = _circular_shift_bounds(
-                n_samples=target_trial.shape[0],
-                fs=fs,
-                min_shift=min_shift,
-            )
-            shifts[trial_index] = int(rng.integers(lower, upper + 1))
+        for trial_index, (lower, upper) in enumerate(bounds):
+            index = int(rng.integers(0, upper - lower + 2))
+            shifts[trial_index] = 0 if index == 0 else lower + index - 1
         specs.append(shifts)
-    return specs
+    return _PermutationPlan(specs, exact=False)
+
+
+def _build_permutation_specs(
+    *, target_trials: Sequence[np.ndarray], surrogate: str, fs: float,
+    min_shift: float | None, n_permutations: int, seed: int | None,
+) -> list[np.ndarray]:
+    """Compatibility helper returning specifications from a permutation plan."""
+
+    return _build_permutation_plan(
+        target_trials=target_trials, surrogate=surrogate, fs=fs,
+        min_shift=min_shift, n_permutations=n_permutations, seed=seed,
+    ).specs
 
 
 def _surrogate_target_trials(
@@ -204,32 +232,40 @@ def _permutation_p_value_and_z_score(
     observed_score: np.ndarray | float,
     null_scores: np.ndarray,
     tail: str,
+    exact: bool = False,
 ) -> tuple[np.ndarray | float, np.ndarray | float]:
     observed = np.asarray(observed_score, dtype=float)
     null_scores = np.asarray(null_scores, dtype=float)
+    if not np.all(np.isfinite(observed)) or not np.all(np.isfinite(null_scores)):
+        raise ValueError("Permutation statistics must be finite.")
 
     scalar_output = observed.ndim == 0
     if scalar_output:
         observed = observed[np.newaxis]
         null_scores = null_scores[:, np.newaxis]
 
+    tolerance = 100 * np.finfo(float).eps * np.maximum(
+        np.abs(observed), np.max(np.abs(null_scores), axis=0),
+    )
     if tail == "greater":
-        exceed = null_scores >= observed[np.newaxis, :]
+        exceed = null_scores >= observed[np.newaxis, :] - tolerance
     elif tail == "less":
-        exceed = null_scores <= observed[np.newaxis, :]
+        exceed = null_scores <= observed[np.newaxis, :] + tolerance
     else:
-        center = null_scores.mean(axis=0, keepdims=True)
-        exceed = np.abs(null_scores - center) >= np.abs(observed[np.newaxis, :] - center)
+        centered_sample = null_scores if exact else np.vstack([null_scores, observed])
+        center = centered_sample.mean(axis=0, keepdims=True)
+        exceed = np.abs(null_scores - center) >= np.abs(observed[np.newaxis, :] - center) - tolerance
 
-    p_value = (1.0 + exceed.sum(axis=0)) / (null_scores.shape[0] + 1.0)
+    correction = 0.0 if exact else 1.0
+    p_value = (correction + exceed.sum(axis=0)) / (null_scores.shape[0] + correction)
     null_mean = null_scores.mean(axis=0)
-    null_std = null_scores.std(axis=0, ddof=1)
+    null_std = null_scores.std(axis=0, ddof=1 if null_scores.shape[0] > 1 else 0)
     z_score = np.zeros_like(null_mean, dtype=float)
 
-    finite = null_std > np.finfo(float).eps
+    finite = null_std > 0.0
     z_score[finite] = (observed[finite] - null_mean[finite]) / null_std[finite]
-    positive = (~finite) & (observed > null_mean + np.finfo(float).eps)
-    negative = (~finite) & (observed < null_mean - np.finfo(float).eps)
+    positive = (~finite) & (observed > null_mean + tolerance)
+    negative = (~finite) & (observed < null_mean - tolerance)
     z_score[positive] = np.inf
     z_score[negative] = -np.inf
 
@@ -251,7 +287,7 @@ def _compute_permutation_test_scores(
     tail: str,
     seed: int | None,
     n_jobs: int = 1,
-) -> tuple[np.ndarray | float, np.ndarray, np.ndarray | float, np.ndarray | float]:
+) -> tuple[np.ndarray | float, np.ndarray, np.ndarray | float, np.ndarray | float, bool]:
     if n_permutations <= 0:
         raise ValueError("n_permutations must be positive.")
 
@@ -262,7 +298,7 @@ def _compute_permutation_test_scores(
         target_trials,
         prediction_trials,
     )
-    permutation_specs = _build_permutation_specs(
+    plan = _build_permutation_plan(
         target_trials=target_trials,
         surrogate=resolved_surrogate,
         fs=fs,
@@ -270,6 +306,8 @@ def _compute_permutation_test_scores(
         n_permutations=n_permutations,
         seed=seed,
     )
+    permutation_specs = plan.specs
+    n_permutations = len(permutation_specs)
     null_per_output = np.zeros(
         (n_permutations, observed_per_output.shape[0]),
         dtype=float,
@@ -306,8 +344,9 @@ def _compute_permutation_test_scores(
         observed_score=observed_score,
         null_scores=null_scores,
         tail=resolved_tail,
+        exact=plan.exact,
     )
-    return observed_score, null_scores, p_value, z_score
+    return observed_score, null_scores, p_value, z_score, plan.exact
 
 
 def _compute_bootstrap_interval_from_cache(
@@ -331,12 +370,18 @@ def _compute_bootstrap_interval_from_cache(
 
     rng = np.random.default_rng(seed)
     n_trials = spectral_cache.trial_cxx.shape[0]
-    sampled_indices = rng.integers(0, n_trials, size=(n_bootstraps, n_trials))
+    active_trials = np.flatnonzero(raw_trial_weights > 0.0)
+    if active_trials.size < 2:
+        raise ValueError("Bootstrap confidence intervals require at least two trials with positive weight.")
+    sampled_indices = rng.choice(active_trials, size=(n_bootstraps, active_trials.size))
+    lag_start, lag_stop = _resolve_lag_samples(
+        fs=fs, tmin=tmin, tmax=tmax, n_fft=spectral_cache.n_fft,
+    )
     kernels = np.zeros(
         (
             n_bootstraps,
             spectral_cache.trial_cxy.shape[2],
-            int(round((tmax - tmin) * fs)),
+            lag_stop - lag_start,
             spectral_cache.trial_cxy.shape[3],
         ),
         dtype=float,
@@ -485,15 +530,13 @@ def _score_prediction_trials(
 ) -> np.ndarray:
     if len(target_trials) != len(prediction_trials):
         raise ValueError("target_trials and prediction_trials must have the same length.")
-    return np.mean(
-        np.vstack(
-            [
-                metric(target, prediction)
-                for target, prediction in zip(target_trials, prediction_trials, strict=True)
-            ]
-        ),
-        axis=0,
-    )
+    scores = []
+    for target, prediction in zip(target_trials, prediction_trials, strict=True):
+        score = np.asarray(metric(target, prediction), dtype=float)
+        if score.shape != (target.shape[1],) or not np.all(np.isfinite(score)):
+            raise ValueError("metric must return one finite score per output column.")
+        scores.append(score)
+    return np.mean(np.vstack(scores), axis=0)
 
 
 def _score_regularization_grid_for_fold(
@@ -514,8 +557,7 @@ def _score_regularization_grid_for_fold(
         (len(feature_regularization_values), val_targets[0].shape[1]),
         dtype=float,
     )
-    lag_start = int(round(float(tmin) * float(fs)))
-    lag_stop = int(round(float(tmax) * float(fs)))
+    lag_start, lag_stop = _resolve_lag_samples(fs=fs, tmin=tmin, tmax=tmax, n_fft=n_fft)
     prepared_predictors = _prepare_prediction_trials(
         val_predictors,
         n_lags=lag_stop - lag_start,

@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import pickle
 import random
-from collections.abc import Sequence
+import warnings
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import wraps
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 import numpy as np
 from scipy.signal import hilbert
@@ -15,7 +18,7 @@ from scipy.signal import hilbert
 from .metrics import MetricSpec, _resolve_metric, pearsonr
 from .prediction import (
     _aggregate_null_scores,
-    _build_permutation_specs,
+    _build_permutation_plan,
     _compute_bootstrap_interval_from_cache,
     _compute_permutation_test_scores,
     _extract_impulse_response,
@@ -40,7 +43,9 @@ from .spectral import (
     SpectralMethod,
     _aggregate_cached_spectra,
     _build_spectral_cache,
+    _matched_spectra,
     _resolve_multitaper_parameters,
+    _resolve_spectral_settings,
     _solve_transfer_function,
     _SpectralCache,
     _validate_spectral_method,
@@ -55,6 +60,7 @@ from .utils import (
     _phase_values,
     _resolve_frequency_weight_value_mode,
     _resolve_k_folds,
+    _resolve_lag_samples,
     _resolve_n_jobs,
     _resolve_raw_trial_weights,
     _resolve_regularization_candidates,
@@ -67,6 +73,24 @@ from .utils import (
 
 _USE_STORED_TRIAL_WEIGHTS = object()
 RegularizationSpec = float | tuple[float, ...]
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _preserve_fit_state(method: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Roll back assigned state on failure without copying learned arrays."""
+
+    @wraps(method)
+    def guarded(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        estimator = args[0]
+        state = estimator.__dict__.copy()
+        try:
+            return method(*args, **kwargs)
+        except Exception:
+            estimator.__dict__ = state
+            raise
+
+    return guarded
 
 
 def _resolve_directional_lag_window(
@@ -235,6 +259,7 @@ class TRF:
         self.bootstrap_samples: int | None = None
         self._fit_config: dict[str, object] | None = None
 
+    @_preserve_fit_state
     def train(
         self,
         stimulus: np.ndarray | Sequence[np.ndarray],
@@ -398,6 +423,9 @@ class TRF:
         aggregated-spectra path automatically when that cache is unnecessary.
         Banded regularization is entirely opt-in through ``bands``; leaving it
         unset preserves the default "mTRF in Fourier space" workflow.
+        Samples and lag/sampling settings must be finite, and both sample and
+        feature axes must be non-empty. Failed training leaves the previous
+        estimator state unchanged, including any stored uncertainty interval.
         """
 
         stimulus_trials, _ = _coerce_trials(stimulus, "stimulus")
@@ -435,6 +463,10 @@ class TRF:
             tmin=requested_tmin,
             tmax=requested_tmax,
         )
+        _, resolved_n_fft = _resolve_spectral_settings(
+            x_trials, segment_length=segment_length, n_fft=n_fft,
+        )
+        _resolve_lag_samples(fs=fs, tmin=tmin, tmax=tmax, n_fft=resolved_n_fft)
         if int(bootstrap_samples) < 0:
             raise ValueError("bootstrap_samples must be non-negative.")
         _validate_confidence_level(bootstrap_level, name="bootstrap_level")
@@ -459,6 +491,8 @@ class TRF:
                 show_progress=show_progress,
             )
         raw_trial_weights = _resolve_raw_trial_weights(y_trials, trial_weights)
+        if bootstrap_samples > 0 and np.count_nonzero(raw_trial_weights > 0) < 2:
+            raise ValueError("Bootstrap confidence intervals require at least two trials with positive weight.")
         self.trial_weights = _copy_value(trial_weights)
         self.bands = resolved_bands
         self.regularization_candidates = [_copy_value(spec) for spec in regularization_specs]
@@ -480,7 +514,7 @@ class TRF:
             "n_tapers": None if n_tapers is None else int(n_tapers),
             "window": _copy_value(window),
             "detrend": detrend,
-            "k": int(k),
+            "k": raw_k,
             "average": _copy_value(average),
             "seed": seed,
             "show_progress": bool(show_progress),
@@ -846,6 +880,10 @@ class TRF:
             feature_regularization=feature_regularization,
         )
 
+        weights, times = _extract_impulse_response(
+            transfer_function, fs=float(fs), n_fft=spectral_cache.n_fft,
+            tmin=float(tmin), tmax=float(tmax),
+        )
         self.transfer_function = transfer_function
         self.frequencies = np.fft.rfftfreq(spectral_cache.n_fft, d=1.0 / float(fs))
         self.fs = float(fs)
@@ -863,13 +901,7 @@ class TRF:
         self.detrend = spectral_cache.detrend
         self.tmin = float(tmin)
         self.tmax = float(tmax)
-        self.weights, self.times = _extract_impulse_response(
-            self.transfer_function,
-            fs=float(fs),
-            n_fft=spectral_cache.n_fft,
-            tmin=float(tmin),
-            tmax=float(tmax),
-        )
+        self.weights, self.times = weights, times
 
     def to_impulse_response(
         self,
@@ -1159,10 +1191,9 @@ class TRF:
             axis=0,
         ).real
 
-        lag_start = int(round(float(tmin) * float(self.fs)))
-        lag_stop = int(round(float(tmax) * float(self.fs)))
-        if lag_stop <= lag_start:
-            raise ValueError("tmax must be greater than tmin.")
+        lag_start, lag_stop = _resolve_lag_samples(
+            fs=self.fs, tmin=tmin, tmax=tmax, n_fft=self.n_fft,
+        )
         lag_indices = np.arange(lag_start, lag_stop, dtype=int)
         kernel = full_kernel[np.mod(lag_indices, int(self.n_fft)), :, :, :]
         kernel = np.transpose(kernel, (1, 3, 0, 2))
@@ -1645,7 +1676,11 @@ class TRF:
         These diagnostics answer a different question than the lag-domain
         kernel plots: they show whether the model captures the spectral content
         of the observed targets, output by output, under the same spectral
-        estimation settings used during fitting.
+        estimation settings used during fitting. Matched spectra are accumulated
+        without full output-by-output spectral matrices. Coherence is invariant
+        to signal units. If only one positive-weight spectral realization is
+        available, a RuntimeWarning is emitted and coherence is returned as NaN.
+        Use multiple trials, segments, or tapers to obtain an averaged estimate.
         """
 
         if self.transfer_function is None or self.frequencies is None:
@@ -1685,9 +1720,10 @@ class TRF:
             self.trial_weights if trial_weights is _USE_STORED_TRIAL_WEIGHTS else trial_weights
         )
         raw_trial_weights = _resolve_raw_trial_weights(target_trials, resolved_trial_weights)
-        prediction_cache = _build_spectral_cache(
+        predicted_spectrum, observed_spectrum, cross_spectrum, realizations = _matched_spectra(
             prediction_trials,
             target_trials,
+            raw_trial_weights=raw_trial_weights,
             segment_length=self.segment_length,
             overlap=float(self.overlap),
             n_fft=self.n_fft,
@@ -1697,36 +1733,21 @@ class TRF:
             window=self.window,
             detrend=self.detrend,
         )
-        observed_cache = _build_spectral_cache(
-            target_trials,
-            target_trials,
-            segment_length=self.segment_length,
-            overlap=float(self.overlap),
-            n_fft=self.n_fft,
-            spectral_method=self.spectral_method,
-            time_bandwidth=float(self.time_bandwidth or 3.5),
-            n_tapers=self.n_tapers,
-            window=self.window,
-            detrend=self.detrend,
-        )
-        predicted_auto, predicted_vs_observed = _aggregate_cached_spectra(
-            prediction_cache,
-            raw_trial_weights=raw_trial_weights,
-        )
-        observed_auto, _ = _aggregate_cached_spectra(
-            observed_cache,
-            raw_trial_weights=raw_trial_weights,
-        )
-
-        predicted_spectrum = np.real(np.diagonal(predicted_auto, axis1=1, axis2=2))
-        observed_spectrum = np.real(np.diagonal(observed_auto, axis1=1, axis2=2))
-        cross_spectrum = np.diagonal(predicted_vs_observed, axis1=1, axis2=2)
-        denominator = np.clip(
-            predicted_spectrum * observed_spectrum,
-            np.finfo(float).eps,
-            None,
-        )
-        coherence = np.clip((np.abs(cross_spectrum) ** 2) / denominator, 0.0, 1.0)
+        valid_power = (predicted_spectrum > 0) & (observed_spectrum > 0)
+        normalized_cross = np.zeros_like(cross_spectrum)
+        np.divide(cross_spectrum, np.sqrt(predicted_spectrum),
+                  out=normalized_cross, where=valid_power)
+        np.divide(normalized_cross, np.sqrt(observed_spectrum),
+                  out=normalized_cross, where=valid_power)
+        coherence = np.clip(np.abs(normalized_cross)**2, 0.0, 1.0)
+        if realizations < 2:
+            warnings.warn(
+                "Coherence requires at least two positive-weight spectral realizations; "
+                "use multiple trials, shorter segments, or multiple tapers. Returning NaN coherence.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            coherence[:] = np.nan
 
         return TRFDiagnostics(
             frequencies=self.frequencies.copy(),
@@ -1898,6 +1919,7 @@ class TRF:
             self.times,
             tmin=tmin,
             tmax=tmax,
+            fs=self.fs,
         )
 
     def bootstrap_confidence_interval(
@@ -1915,8 +1937,10 @@ class TRF:
 
         The estimator must already be fitted. By default the method reuses the
         same fit settings and the same trial-weighting strategy as the model.
-        Bootstrap resampling is performed over trials, so at least two trials
-        are required. The returned bounds are pointwise percentile intervals:
+        Bootstrap resampling is performed over positive-weight trials, so at
+        least two such trials are required. Zero-weight trials are excluded.
+        Input and output counts must match the fitted model.
+        The returned bounds are pointwise percentile intervals:
         they are not simultaneous across lags, inputs, or outputs and do not
         include uncertainty from regularization or spectral-setting selection.
         ``n_jobs`` controls optional parallel execution across resamples.
@@ -1960,6 +1984,11 @@ class TRF:
         _check_trial_lengths(stimulus_trials, response_trials)
         x_trials, y_trials = self._get_xy(stimulus_trials, response_trials)
         self._validate_dimensions(x_trials, y_trials)
+
+        if x_trials[0].shape[1] != self.weights.shape[0]:
+            raise ValueError("Bootstrap predictor count must match the fitted model.")
+        if y_trials[0].shape[1] != self.weights.shape[-1]:
+            raise ValueError("Bootstrap target count must match the fitted model.")
 
         resolved_trial_weights = self.trial_weights if trial_weights is _USE_STORED_TRIAL_WEIGHTS else trial_weights
         spectral_cache = _build_spectral_cache(
@@ -2023,7 +2052,10 @@ class TRF:
             ``response``. Backward models require both ``response`` and
             ``stimulus``.
         n_permutations:
-            Number of surrogate scores used to form the null distribution.
+            Maximum number of reference scores. If the complete admissible
+            space fits within this number and has at most 10,000 members, it
+            is enumerated exactly, including identity. The result stores the
+            actual count and an ``exact`` flag.
         average:
             Score reduction applied to the observed and surrogate scores. This
             follows the same rules as :meth:`score`.
@@ -2032,12 +2064,13 @@ class TRF:
         surrogate:
             Strategy used to break the alignment between predictions and
             observed targets. ``"circular_shift"`` rolls each evaluation trial
-            by a random non-zero offset and works for single-trial or
+            by a random offset and works for single-trial or
             multi-trial data. ``"trial_shuffle"`` permutes whole target trials
             and therefore requires at least two equal-length evaluation trials.
         min_shift:
             Minimum circular shift, in seconds, used when
-            ``surrogate="circular_shift"``. ``None`` allows any non-zero shift.
+            ``surrogate="circular_shift"``. This constrains nonzero shifts;
+            the identity is also included in the reference space.
         tail:
             Tail convention for the p-value calculation: ``"greater"``,
             ``"less"``, or ``"two-sided"``.
@@ -2058,10 +2091,11 @@ class TRF:
         All built-in metrics in ``ffTRF`` use the "larger is better" convention,
         so ``tail="greater"`` is the natural default. The returned null scores
         follow the same scalar-vs-array contract as :meth:`score`: aggregated
-        scores are stored as a 1D array of length ``n_permutations``, while
-        ``average=False`` keeps one surrogate score per output. The minimum
-        attainable p-value is ``1 / (n_permutations + 1)``. Per-output p-values
-        are not corrected for multiple comparisons.
+        scores are stored as a 1D array of the actual reference count, while
+        ``average=False`` keeps one score per output. Randomized sampling
+        includes identity and uses the plus-one p-value correction. Exact
+        enumeration uses the fraction of reference scores as extreme as the
+        observed score. Per-output p-values are not multiplicity corrected.
         """
 
         if self.weights is None or self.fs is None:
@@ -2090,7 +2124,7 @@ class TRF:
             tmax=tmax,
         )
         prediction_trials, _ = _coerce_trials(predictions, "prediction")
-        observed_score, null_scores, p_value, z_score = _compute_permutation_test_scores(
+        observed_score, null_scores, p_value, z_score, exact = _compute_permutation_test_scores(
             prediction_trials=prediction_trials,
             target_trials=target_trials,
             metric=self.metric,
@@ -2110,7 +2144,8 @@ class TRF:
             z_score=z_score,
             tail=resolved_tail,
             surrogate=resolved_surrogate,
-            n_permutations=int(n_permutations),
+            n_permutations=len(null_scores),
+            exact=exact,
         )
 
     def refit_permutation_test(
@@ -2148,13 +2183,15 @@ class TRF:
         test_stimulus, test_response:
             Held-out aligned evaluation data used to score every fitted model.
         n_permutations:
-            Number of surrogate refits used to form the null distribution.
+            Maximum number of reference refits. Small admissible spaces are
+            enumerated exactly as described in :meth:`permutation_test`.
         average:
             Score reduction applied to the observed and surrogate scores. This
             follows the same rules as :meth:`score`.
         surrogate:
             Strategy used to break the training alignment. ``"circular_shift"``
-            rolls each training target trial by a random non-zero offset.
+            rolls each training target trial by a random offset, including
+            identity in the reference space.
             ``"trial_shuffle"`` permutes whole training target trials and
             therefore requires at least two equal-length training trials.
         min_shift:
@@ -2184,8 +2221,9 @@ class TRF:
 
         Notes
         -----
-        The minimum attainable p-value is
-        ``1 / (n_permutations + 1)``. When ``average=False``, the returned
+        The minimum attainable p-value is ``1 / N`` for exact enumeration
+        and ``1 / (N + 1)`` for randomized sampling, where ``N`` is the actual
+        reference count stored in the result. When ``average=False``, the returned
         per-output p-values are not corrected for multiple comparisons.
         """
 
@@ -2213,7 +2251,7 @@ class TRF:
         )
         resolved_surrogate = _resolve_permutation_surrogate(surrogate)
         resolved_tail = _resolve_permutation_tail(tail)
-        permutation_specs = _build_permutation_specs(
+        plan = _build_permutation_plan(
             target_trials=train_y_trials,
             surrogate=resolved_surrogate,
             fs=float(train_config["fs"]),
@@ -2221,6 +2259,8 @@ class TRF:
             n_permutations=int(n_permutations),
             seed=seed,
         )
+        permutation_specs = plan.specs
+        n_permutations = len(permutation_specs)
 
         def _fit_and_score(
             local_train_stimulus: Sequence[np.ndarray],
@@ -2297,6 +2337,7 @@ class TRF:
             observed_score=observed_score,
             null_scores=null_scores,
             tail=resolved_tail,
+            exact=plan.exact,
         )
         return PermutationTestResult(
             observed_score=observed_score,
@@ -2306,6 +2347,7 @@ class TRF:
             tail=resolved_tail,
             surrogate=resolved_surrogate,
             n_permutations=int(n_permutations),
+            exact=plan.exact,
         )
 
     def predict(
@@ -2585,7 +2627,7 @@ class TRF:
             if progress_bar is not None:
                 progress_bar.close()
 
-        fold_mean = per_reg_scores.mean(axis=1)
+        fold_mean = np.average(per_reg_scores, axis=1, weights=[len(fold) for fold in folds])
         if average is False:
             return fold_mean
         if average is True:
@@ -2771,16 +2813,15 @@ class TRF:
         window: None | str | tuple[str, float] | np.ndarray,
         detrend: None | str,
     ) -> None:
-        if fs <= 0:
-            raise ValueError("fs must be positive.")
-        if tmax <= tmin:
-            raise ValueError("tmax must be greater than tmin.")
+        _resolve_lag_samples(fs=fs, tmin=tmin, tmax=tmax)
         if segment_length is not None and int(segment_length) <= 0:
             raise ValueError("segment_length must be positive.")
         if not 0.0 <= overlap < 1.0:
             raise ValueError("overlap must lie in [0, 1).")
         if n_fft is not None and int(n_fft) <= 0:
             raise ValueError("n_fft must be positive.")
+        if isinstance(window, np.ndarray) and not np.all(np.isfinite(window)):
+            raise ValueError("window must contain only finite values.")
         resolved_method = _validate_spectral_method(spectral_method)
         if resolved_method == "multitaper":
             _resolve_multitaper_parameters(

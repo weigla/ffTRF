@@ -153,6 +153,95 @@ def _resolve_spectral_settings(
     return resolved_segment_length, resolved_n_fft
 
 
+def _iter_segment_ffts(
+    x_trial: np.ndarray,
+    y_trial: np.ndarray,
+    *,
+    segment_length: int,
+    overlap: float,
+    n_fft: int,
+    spectral_method: SpectralMethod,
+    time_bandwidth: float | None,
+    n_tapers: int | None,
+    window: None | str | tuple[str, float] | np.ndarray,
+    detrend: None | str,
+    window_cache: dict[int, np.ndarray],
+    taper_cache: dict[tuple[int, float, int], np.ndarray],
+) -> Iterable[tuple[np.ndarray, np.ndarray, float]]:
+    """Share segment preparation and FFT work between fitting and diagnostics."""
+
+    segments = list(_iter_segments(x_trial, y_trial, segment_length, overlap))
+    for x_segment, y_segment in segments:
+        if spectral_method == "multitaper":
+            key = (x_segment.shape[0], float(time_bandwidth), int(n_tapers))
+            tapers = taper_cache.get(key)
+            if tapers is None:
+                tapers = np.asarray(dpss(key[0], NW=key[1], Kmax=key[2], sym=False), dtype=float)
+                tapers /= np.sqrt(np.mean(tapers**2, axis=1, keepdims=True))
+                taper_cache[key] = tapers
+            windows = list(tapers)
+        else:
+            windows = [window]
+        weight = 1.0 / (len(segments) * len(windows))
+        for segment_window in windows:
+            x_prepared = _prepare_segment(
+                x_segment, target_length=segment_length, window_cache=window_cache,
+                window=segment_window, detrend=detrend,
+            )
+            y_prepared = _prepare_segment(
+                y_segment, target_length=segment_length, window_cache=window_cache,
+                window=segment_window, detrend=detrend,
+            )
+            yield (np.fft.rfft(x_prepared, n=n_fft, axis=0),
+                   np.fft.rfft(y_prepared, n=n_fft, axis=0), weight)
+
+
+def _matched_spectra(
+    prediction_trials: Sequence[np.ndarray],
+    target_trials: Sequence[np.ndarray],
+    *,
+    raw_trial_weights: np.ndarray,
+    segment_length: int,
+    overlap: float,
+    n_fft: int,
+    spectral_method: SpectralMethod,
+    time_bandwidth: float,
+    n_tapers: int | None,
+    window: None | str | tuple[str, float] | np.ndarray,
+    detrend: None | str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Accumulate only matched output spectra, using O(frequencies * outputs) memory."""
+
+    spectral_method = _validate_spectral_method(spectral_method)
+    if spectral_method == "multitaper":
+        time_bandwidth, n_tapers = _resolve_multitaper_parameters(
+            time_bandwidth=time_bandwidth, n_tapers=n_tapers,
+        )
+    weights = _normalize_weight_vector(raw_trial_weights)
+    shape = (n_fft // 2 + 1, target_trials[0].shape[1])
+    predicted = np.zeros(shape, dtype=float)
+    observed = np.zeros(shape, dtype=float)
+    cross = np.zeros(shape, dtype=np.complex128)
+    realizations = 0
+    window_cache: dict[int, np.ndarray] = {}
+    taper_cache: dict[tuple[int, float, int], np.ndarray] = {}
+    for prediction, target, trial_weight in zip(prediction_trials, target_trials, weights, strict=True):
+        if trial_weight == 0:
+            continue
+        for x_fft, y_fft, segment_weight in _iter_segment_ffts(
+            prediction, target, segment_length=segment_length, overlap=overlap,
+            n_fft=n_fft, spectral_method=spectral_method, time_bandwidth=time_bandwidth,
+            n_tapers=n_tapers, window=window, detrend=detrend,
+            window_cache=window_cache, taper_cache=taper_cache,
+        ):
+            weight = trial_weight * segment_weight
+            predicted += weight * (x_fft.conj() * x_fft).real
+            observed += weight * (y_fft.conj() * y_fft).real
+            cross += weight * x_fft.conj() * y_fft
+            realizations += 1
+    return predicted, observed, cross, realizations
+
+
 def _build_spectral_cache(
     x_trials: Sequence[np.ndarray],
     y_trials: Sequence[np.ndarray],
@@ -205,86 +294,19 @@ def _build_spectral_cache(
     for trial_index, (x_trial, y_trial) in enumerate(zip(x_trials, y_trials, strict=True)):
         stored_trial_index = 0 if aggregate_only else trial_index
         trial_weight = 1.0 if normalized_trial_weights is None else float(normalized_trial_weights[trial_index])
-        segments = list(
-            _iter_segments(
-                x_trial,
-                y_trial,
-                segment_length=resolved_segment_length,
-                overlap=overlap,
+        for x_fft, y_fft, segment_weight in _iter_segment_ffts(
+            x_trial, y_trial, segment_length=resolved_segment_length, overlap=overlap,
+            n_fft=resolved_n_fft, spectral_method=spectral_method,
+            time_bandwidth=resolved_time_bandwidth, n_tapers=resolved_n_tapers,
+            window=window, detrend=detrend, window_cache=window_cache, taper_cache=taper_cache,
+        ):
+            weight = trial_weight * segment_weight
+            trial_cxx[stored_trial_index] += weight * np.einsum(
+                "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True,
             )
-        )
-        segment_weight = trial_weight / len(segments)
-        for x_segment, y_segment in segments:
-            if spectral_method == "multitaper":
-                taper_key = (
-                    x_segment.shape[0],
-                    float(resolved_time_bandwidth),
-                    int(resolved_n_tapers),
-                )
-                tapers = taper_cache.get(taper_key)
-                if tapers is None:
-                    tapers = np.asarray(
-                        dpss(
-                            x_segment.shape[0],
-                            NW=float(resolved_time_bandwidth),
-                            Kmax=int(resolved_n_tapers),
-                            sym=False,
-                        ),
-                        dtype=float,
-                    )
-                    tapers /= np.sqrt(np.mean(tapers**2, axis=1, keepdims=True))
-                    taper_cache[taper_key] = tapers
-                taper_weight = segment_weight / tapers.shape[0]
-                for taper in tapers:
-                    x_prepared = _prepare_segment(
-                        x_segment,
-                        target_length=resolved_segment_length,
-                        window_cache=window_cache,
-                        window=taper,
-                        detrend=detrend,
-                    )
-                    y_prepared = _prepare_segment(
-                        y_segment,
-                        target_length=resolved_segment_length,
-                        window_cache=window_cache,
-                        window=taper,
-                        detrend=detrend,
-                    )
-
-                    x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
-                    y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
-
-                    trial_cxx[stored_trial_index] += taper_weight * np.einsum(
-                        "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
-                    )
-                    trial_cxy[stored_trial_index] += taper_weight * np.einsum(
-                        "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
-                    )
-            else:
-                x_prepared = _prepare_segment(
-                    x_segment,
-                    target_length=resolved_segment_length,
-                    window_cache=window_cache,
-                    window=window,
-                    detrend=detrend,
-                )
-                y_prepared = _prepare_segment(
-                    y_segment,
-                    target_length=resolved_segment_length,
-                    window_cache=window_cache,
-                    window=window,
-                    detrend=detrend,
-                )
-
-                x_fft = np.fft.rfft(x_prepared, n=resolved_n_fft, axis=0)
-                y_fft = np.fft.rfft(y_prepared, n=resolved_n_fft, axis=0)
-
-                trial_cxx[stored_trial_index] += segment_weight * np.einsum(
-                    "fi,fj->fij", np.conjugate(x_fft), x_fft, optimize=True
-                )
-                trial_cxy[stored_trial_index] += segment_weight * np.einsum(
-                    "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True
-                )
+            trial_cxy[stored_trial_index] += weight * np.einsum(
+                "fi,fj->fij", np.conjugate(x_fft), y_fft, optimize=True,
+            )
 
     return _SpectralCache(
         trial_cxx=trial_cxx,
@@ -332,7 +354,7 @@ def _scalar_regularization_value(feature_regularization: np.ndarray) -> float | 
     penalties = np.asarray(feature_regularization, dtype=float)
     if penalties.ndim != 1 or penalties.size == 0:
         raise ValueError("feature_regularization must be a non-empty 1D array.")
-    if np.allclose(penalties, penalties[0]):
+    if np.all(penalties == penalties[0]):
         return _coerce_nonnegative_float(
             float(penalties[0]),
             name="feature_regularization",

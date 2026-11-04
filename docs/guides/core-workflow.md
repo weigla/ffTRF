@@ -36,6 +36,10 @@ first lag depends on the sampling rate.
 
 The main entry point is `train(...)`.
 
+If training fails, an already fitted estimator keeps its previous learned
+state, settings, and bootstrap interval. You can correct the inputs and retry
+without losing the usable model.
+
 Use a direct fit when you already know the ridge value:
 
 ```python
@@ -157,6 +161,10 @@ If you want the null to include retraining and regularization selection, use
 - `save(...)` serializes the estimator with pickle
 - `load(...)` restores a saved estimator state
 - `copy(...)` creates an in-memory deep copy
+
+Nested arrays and lists inside tuple-valued configuration inputs are copied
+too. Changing the caller's original regularization grid or a copied model does
+not change the stored configuration used by a later refit.
 
 ## A Good First Workflow
 

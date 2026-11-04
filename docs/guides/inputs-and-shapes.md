@@ -13,6 +13,16 @@ Single-trial inputs can be passed as:
 In a 1D input, `ffTRF` treats the array as a single feature or single output
 channel.
 
+Sample and feature/output axes must be non-empty. Arrays must contain only
+finite values: NaN and infinity are rejected, including during prediction and
+scoring. Handle missing samples before calling the toolbox. Sampling rates
+must be finite and positive, and lag bounds must be finite.
+
+Lag bounds are rounded separately to sample indices and then interpreted as
+the half-open sample interval. The same indices are used by kernels,
+bootstrap intervals, frequency-resolved views, and plotting. A requested
+interval cannot contain more samples than the stored FFT length.
+
 Examples:
 
 - stimulus envelope: `(n_samples,)`

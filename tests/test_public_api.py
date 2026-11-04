@@ -347,3 +347,30 @@ def test_refit_permutation_test_requires_fit_configuration() -> None:
 
 def test_top_level_api_exports_permutation_result() -> None:
     assert fftrf.PermutationTestResult is PermutationTestResult
+
+
+@pytest.mark.parametrize("direction", [1, -1])
+@pytest.mark.parametrize("refit", [False, True])
+def test_two_trial_permutation_resolution_is_exact(direction: int, refit: bool) -> None:
+    rng = np.random.default_rng(804)
+    train = [rng.normal(size=(48, 1)) for _ in range(4)]
+    heldout = [rng.normal(size=(48, 1)) for _ in range(2)]
+    model = TRF(direction=direction)
+    model.train(train[:2], train[:2], fs=100, tmin=0, tmax=0.01, regularization=1.0)
+    results = []
+    for n_jobs in (1, 2):
+        if refit:
+            result = model.refit_permutation_test(
+                train_stimulus=train[:2], train_response=train[:2],
+                test_stimulus=heldout, test_response=heldout,
+                surrogate="trial_shuffle", n_permutations=999, seed=0, n_jobs=n_jobs,
+            )
+        else:
+            result = model.permutation_test(heldout, heldout, surrogate="trial_shuffle",
+                                            n_permutations=999, seed=0, n_jobs=n_jobs)
+        assert result.exact
+        assert result.n_permutations == 2
+        assert result.null_scores.shape == (2,)
+        assert result.p_value == 0.5
+        results.append(result.null_scores)
+    np.testing.assert_array_equal(*results)

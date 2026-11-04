@@ -36,6 +36,8 @@ class TRFDiagnostics:
     coherence:
         Magnitude-squared coherence between each predicted output and the
         corresponding observed target. Shape is ``(n_frequencies, n_outputs)``.
+        Values are NaN when only one positive-weight spectral realization is
+        available, because single-periodogram coherence is degenerate.
 
     Notes
     -----
@@ -86,11 +88,16 @@ class PermutationTestResult:
         Surrogate data strategy used to construct the null distribution, for
         example ``"circular_shift"`` or ``"trial_shuffle"``.
     n_permutations:
-        Number of surrogate scores stored in :attr:`null_scores`.
+        Actual number of reference scores stored in :attr:`null_scores`. In an
+        exact test this can be smaller than the requested maximum.
+    exact:
+        Whether the admissible reference space was enumerated once, including
+        the identity. Otherwise the result uses randomized sampling.
 
     Notes
     -----
-    The minimum attainable p-value is ``1 / (n_permutations + 1)``.
+    The minimum attainable p-value is ``1 / n_permutations`` for an exact test
+    and ``1 / (n_permutations + 1)`` for a randomized test.
     Per-output p-values returned when ``average=False`` are uncorrected for
     multiple comparisons.
     """
@@ -102,6 +109,7 @@ class PermutationTestResult:
     tail: str
     surrogate: str
     n_permutations: int
+    exact: bool = False
 
 
 @dataclass(slots=True)

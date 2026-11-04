@@ -56,9 +56,13 @@ def _group_delay_values(
 def _ensure_2d(array: np.ndarray, name: str) -> np.ndarray:
     array = np.asarray(array, dtype=float)
     if array.ndim == 1:
-        return array[:, np.newaxis]
+        array = array[:, np.newaxis]
     if array.ndim != 2:
         raise ValueError(f"{name} must be 1D or 2D, got shape {array.shape!r}.")
+    if 0 in array.shape:
+        raise ValueError(f"{name} must have non-empty sample and feature axes.")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{name} must contain only finite values.")
     return array
 
 
@@ -117,9 +121,54 @@ def _copy_value(value):
         return value.copy()
     if isinstance(value, list):
         return [_copy_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_copy_value(item) for item in value)
     if isinstance(value, dict):
         return {key: _copy_value(item) for key, item in value.items()}
     return value
+
+
+def _resolve_lag_samples(
+    *, fs: float, tmin: float, tmax: float, n_fft: int | None = None,
+) -> tuple[int, int]:
+    """Resolve the shared half-open, sample-rounded physical lag interval."""
+
+    if not np.isfinite(fs) or fs <= 0:
+        raise ValueError("fs must be finite and positive.")
+    if not np.isfinite(tmin) or not np.isfinite(tmax) or tmax <= tmin:
+        raise ValueError("tmax must be finite and greater than finite tmin.")
+    sample_start, sample_stop = float(tmin) * float(fs), float(tmax) * float(fs)
+    if not np.isfinite(sample_start) or not np.isfinite(sample_stop):
+        raise ValueError("Lag bounds must resolve to finite sample indices.")
+    lag_start = int(round(sample_start))
+    lag_stop = int(round(sample_stop))
+    if lag_stop <= lag_start:
+        raise ValueError("tmax must be greater than tmin by at least one rounded sample.")
+    if n_fft is not None and lag_stop - lag_start > n_fft:
+        raise ValueError("Requested lag window is longer than n_fft.")
+    return lag_start, lag_stop
+
+
+def _inverse_variance_trial_weights(trials: Sequence[np.ndarray]) -> np.ndarray:
+    """Return stable relative inverse variances, with a constant-trial policy."""
+
+    if len(trials) == 0:
+        raise ValueError("Need at least one trial to compute weights.")
+    arrays = [_ensure_2d(trial, "trial") for trial in trials]
+    scale = max(float(np.max(np.abs(trial))) for trial in arrays)
+    variances = []
+    for trial in arrays:
+        shifted = trial / scale if scale > 0 else trial.copy()
+        shifted = shifted - shifted[:1]
+        centered = shifted - shifted.mean(axis=0, keepdims=True)
+        variances.append(np.mean(centered**2))
+    variances = np.asarray(variances)
+    constant = variances == 0.0
+    if np.any(constant):
+        # Limit of inverse variance: constant trials share all weight.
+        return constant.astype(float) / constant.sum()
+    weights = variances.min() / variances
+    return weights / weights.sum()
 
 
 def _coerce_nonnegative_float(value: float, *, name: str) -> float:
@@ -135,6 +184,8 @@ def _resolve_segment_length(
     segment_length: int | None,
     segment_duration: float | None,
 ) -> int | None:
+    if not np.isfinite(fs) or fs <= 0:
+        raise ValueError("fs must be finite and positive.")
     if segment_length is not None and segment_duration is not None:
         raise ValueError("Provide either segment_length or segment_duration, not both.")
     if segment_duration is None:
@@ -420,13 +471,18 @@ def _build_frequency_filterbank(
         filters[active, 0] = 1.0
         return band_centers, filters, resolved_scale, bandwidth
 
-    scaled_distance = (frequencies[:, np.newaxis] - band_centers[np.newaxis, :]) / bandwidth
-    filters = np.exp(-0.5 * scaled_distance**2)
+    distance = np.abs(frequencies[:, np.newaxis] - band_centers[np.newaxis, :])
+    with np.errstate(over="ignore", invalid="ignore"):
+        log_filters = -0.5 * (distance / bandwidth)**2
+        filters = np.exp(log_filters - log_filters.max(axis=1, keepdims=True))
+    unresolved = ~np.isfinite(filters).all(axis=1)
+    if np.any(unresolved):
+        # In the zero-width limit, assign a bin to its closest center(s).
+        nearest = distance[unresolved].min(axis=1, keepdims=True)
+        filters[unresolved] = distance[unresolved] == nearest
     filters[~active, :] = 0.0
-
     row_sums = filters.sum(axis=1, keepdims=True)
-    valid_rows = active & (row_sums[:, 0] > np.finfo(float).eps)
-    filters[valid_rows, :] /= row_sums[valid_rows, :]
+    filters[active, :] /= row_sums[active, :]
     return band_centers, filters, resolved_scale, bandwidth
 
 
@@ -603,11 +659,7 @@ def _resolve_raw_trial_weights(
     elif isinstance(trial_weights, str):
         if trial_weights != "inverse_variance":
             raise ValueError("trial_weights must be None, 'inverse_variance', or a weight vector.")
-        variances = [
-            np.var(y_trial, axis=0).mean()
-            for y_trial in y_trials
-        ]
-        weights = 1.0 / np.clip(variances, np.finfo(float).eps, None)
+        weights = _inverse_variance_trial_weights(y_trials)
     else:
         weights = np.asarray(trial_weights, dtype=float)
         if weights.shape != (len(y_trials),):

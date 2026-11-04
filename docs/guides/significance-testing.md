@@ -59,14 +59,17 @@ result = model.permutation_test(
 - `null_scores`: surrogate score distribution
 - `p_value`: permutation p-value
 - `z_score`: standardized distance from the null mean
+- `n_permutations`: actual number of reference scores evaluated
+- `exact`: whether the admissible reference space was enumerated completely
 
 The default `tail="greater"` matches all built-in metrics because larger values
 are better.
 
 ## Circular-Shift Surrogates
 
-`surrogate="circular_shift"` rolls each target trial by a random non-zero
-offset. This preserves its marginal values and within-trial autocorrelation,
+`surrogate="circular_shift"` rolls each target trial by a random offset.
+Identity (zero shift) is included in the reference space; `min_shift` constrains
+the nonzero shifts. This preserves marginal values and within-trial autocorrelation,
 but it does not make every shift scientifically valid.
 
 Consider:
@@ -101,15 +104,27 @@ and surrogate models.
 
 ## P-Value Resolution
 
-For a greater-tail test, `ffTRF` uses
-`p = (1 + count(null_score >= observed_score)) / (n_permutations + 1)`.
+`n_permutations` is an upper bound on work. If the complete admissible space
+has no more than that many members and at most 10,000 members, it is enumerated
+once, including the identity. The result has `exact=True`, and its actual
+`n_permutations` and the first dimension of `null_scores` equal the space size.
+For a greater-tail exact test, `p = count(score >= observed_score) / N`.
 
-The smallest attainable p-value is therefore
-`1 / (n_permutations + 1)`. For example, 99 permutations cannot yield
-`p < 0.01`; use at least 999 permutations when that resolution matters.
+For larger spaces, sampling is uniform with replacement and includes identity.
+The randomized test uses
+`p = (1 + count(null_score >= observed_score)) / (N + 1)` and `exact=False`.
+Numerical ties use a relative, scale-aware floating-point tolerance.
 
-Two-sided tests compare absolute deviations from the null mean. Choose the
-tail in advance and interpret it together with the metric.
+The smallest attainable p-value is `1 / N` for exact enumeration and
+`1 / (N + 1)` for randomized sampling. Two trials have only two trial-shuffle
+pairings, so requesting 999 shuffles evaluates two pairings and cannot support
+a p-value below **0.5**. Repeating the same swap cannot add resolution.
+
+Two-sided tests compare absolute deviations from a common reference mean,
+including the observed statistic. Choose the tail in advance and interpret it
+together with the metric. Exhaustive calculation does not establish that a
+restricted `min_shift` reference is scientifically exchangeable; the
+surrogate design assumptions still need justification.
 
 ## Multiple Outputs and Analysis Choices
 
@@ -146,7 +161,8 @@ A concise methods statement should identify:
 - held-out unit and sample size
 - surrogate type and exchangeability rationale
 - `min_shift` and admissible shifts for circular surrogates
-- number of permutations, tail, and random seed
+- requested and actual reference counts, exact versus randomized mode, tail,
+  and random seed
 - observed score, p-value, and minimum attainable p-value
 - multiplicity correction when more than one output or hypothesis was tested
 

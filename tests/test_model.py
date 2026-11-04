@@ -78,10 +78,7 @@ def _direct_transfer_function(
     feature_regularization: np.ndarray,
 ) -> np.ndarray:
     feature_regularization = np.asarray(feature_regularization, dtype=float)
-    if np.allclose(feature_regularization, feature_regularization[0]):
-        ridge_matrix = float(feature_regularization[0]) * np.eye(cxx.shape[1], dtype=np.complex128)
-    else:
-        ridge_matrix = np.diag(feature_regularization.astype(np.complex128))
+    ridge_matrix = np.diag(feature_regularization.astype(np.complex128))
 
     transfer_function = np.zeros_like(cxy)
     for frequency_index in range(cxx.shape[0]):

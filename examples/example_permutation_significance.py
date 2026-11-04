@@ -50,8 +50,9 @@ def main() -> None:
     print("Example: fixed-kernel permutation significance test")
     print(f"  observed held-out r: {float(result.observed_score):.4f}")
     print(f"  greater-tail p-value: {float(result.p_value):.4f}")
-    print(f"  permutations: {result.n_permutations}")
-    print(f"  minimum attainable p: {1.0 / (result.n_permutations + 1):.4f}")
+    print(f"  reference scores: {result.n_permutations} ({'exact' if result.exact else 'randomized'})")
+    correction = 0 if result.exact else 1
+    print(f"  minimum attainable p: {1.0 / (result.n_permutations + correction):.4f}")
     print("  inference: one prespecified output; no multiple-output correction needed")
     print(f"  saved figure: {OUTPUT_PATH}")
 

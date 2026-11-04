@@ -174,6 +174,10 @@ Scores are first calculated per validation trial and then averaged equally
 across trials. A long trial does not automatically receive more weight than a
 short trial.
 
+This also applies when fold sizes differ: fold means are weighted by their
+validation-trial counts. For example, a five-trial, two-fold split gives every
+trial one fifth of the final CV score.
+
 ## How Trials and Segments Are Weighted
 
 With `trial_weights=None`, each training trial contributes equally to the
@@ -204,6 +208,8 @@ model.train(
 ```
 
 Here the first feature is one group and the next 16 features form another.
+Distinct band coefficients remain distinct even when their absolute values
+are very small. Only exactly equal penalties use the scalar-ridge shortcut.
 Feature scaling remains important: banded ridge can accommodate different
 penalty strengths, but it does not make arbitrary feature units comparable.
 The number of band combinations also grows quickly, so use a held-out test set
